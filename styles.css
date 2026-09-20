@@ -1597,3 +1597,120 @@ button:disabled {opacity:.6;cursor:default;transform:none}
 @media(max-width:500px) {.study-breadcrumb{font-size:10px;margin-bottom:20px}.detail-layout>.enrollment-card{grid-template-columns:1fr}.enrollment-card .catalog-art.large{height:125px;min-height:0}.enrollment-card .catalog-art-tile{width:75px;height:75px;top:18px}.enrollment-card .catalog-art-tile svg{width:32px;height:32px}.enrollment-body{padding:20px}.enrollment-body>.tag-pill{margin-bottom:9px}.enrollment-progress{margin:15px 0}.detail-hero{padding-top:4px}.detail-hero h1{font-size:28px}.detail-description{font-size:12px}.outcome-list{grid-template-columns:1fr;gap:15px}.detail-section{padding:20px}.study-heading h1{font-size:22px}.study-heading .library-eyebrow{font-size:8px}.lesson-stage-content{padding:5px 20px 15px}.lesson-stage h2{font-size:22px}.lesson-stage-top,.lesson-stage-bottom{padding:14px;font-size:8px}.lesson-stage{min-height:315px}.study-lesson-actions{align-items:flex-start;gap:10px}.study-lesson-actions .study-hint{font-size:9px}.study-lesson-actions .btn{font-size:10px}.study-tabs{gap:27px;padding:0 20px}.study-tabs button{font-size:11px}.course-complete{flex-wrap:wrap}.course-complete .btn{margin-left:42px}.study-panel p{font-size:12px}.study-resource .btn{margin-left:35px}.study-outline-header{padding:20px}.study-outline .study-lesson{font-size:11px;padding:14px}.study-outline .study-module summary{font-size:12px;padding:17px}.study-outline .study-module small{font-size:9px}}
 .lesson-reflection-actions {display:flex;flex-wrap:wrap;align-items:center;gap:18px;margin-top:19px}
 .lesson-reflection-actions .text-link {font-size:10px}
+
+/* Reading-first typography for course details and lessons. */
+body {--study-body-text:#d2d8e6}
+body.light-theme {--study-body-text:#414d66}
+.study-panel p,
+.practice-callout p,
+.detail-description,
+.detail-section>p:not(.library-eyebrow),
+.outcome-list li,
+.detail-requirements ul {font-size:18px;line-height:1.75;color:var(--study-body-text)}
+.study-panel>p:not(.library-eyebrow),
+.practice-callout p,
+.detail-description,
+.detail-section>p:not(.library-eyebrow) {max-width:65ch}
+.study-panel h2,
+.study-panel .section-heading h2,
+.detail-section h2 {font-size:24px;line-height:1.35}
+.study-panel h3,
+.detail-section h3 {font-size:20px;line-height:1.45}
+.study-panel p.library-eyebrow,
+.study-heading .library-eyebrow,
+.study-outline-header .library-eyebrow,
+.detail-main .library-eyebrow {font-size:13px;line-height:1.6;letter-spacing:1.2px}
+.study-panel {padding:30px}
+.study-panel>p {margin:14px 0 22px}
+.practice-callout {padding:22px;margin:28px 0;gap:16px}
+.practice-callout>span svg {width:24px;height:24px}
+.study-tabs {overflow-x:auto;gap:28px}
+.study-tabs button,
+.study-lesson-actions .btn,
+.study-bottom-nav .text-link,
+.lesson-reflection-actions .text-link,
+.study-resource .btn,
+.notes-footer .text-link,
+.detail-section-links button,
+.enrollment-body>.btn,
+.study-heading>.text-link,
+.detail-section .section-heading .text-link {font-size:16px;line-height:1.5}
+.study-tabs button {padding:20px 0 17px}
+.study-tabs button span {font-size:13px}
+.study-lesson-actions .btn {padding:12px 18px}
+.study-lesson-actions {align-items:center;gap:16px}
+.study-hint,
+.study-lesson-actions .study-hint,
+.lesson-completed-label,
+.study-breadcrumb,
+.study-bottom-nav,
+.notes-footer,
+#note-status,
+.study-progress-label,
+.study-progress-label strong,
+.lesson-stage-top,
+.lesson-stage-bottom,
+.detail-facts,
+.detail-teacher>div>span,
+.course-includes li,
+.enrollment-body>.tag-pill,
+.study-panel .section-heading p {font-size:14px;line-height:1.65}
+#note-status {white-space:normal}
+#study-note {font-size:18px;line-height:1.75;min-height:280px;padding:20px}
+.study-panel .section-heading {flex-wrap:wrap;gap:8px}
+.notes-footer {flex-wrap:wrap}
+.study-resource strong {font-size:16px;line-height:1.5}
+.study-resource span {font-size:14px;line-height:1.65}
+.study-resource {gap:15px;padding:18px;flex-wrap:wrap}
+.study-resource .btn {margin-left:0}
+.study-outline h2 {font-size:20px}
+.study-outline .study-module summary,
+.study-module summary {font-size:15px;line-height:1.6;padding:17px 14px}
+.study-outline .study-lesson,
+.study-lesson {font-size:15px;line-height:1.55;padding:15px 13px}
+.study-outline .study-module small,
+.study-module small,
+.module-number,
+.lesson-duration {font-size:13px;line-height:1.6}
+.outline-note {font-size:13px}
+.lesson-marker {width:25px;height:25px}
+.lesson-marker svg {width:18px;height:18px}
+.study-outline .study-lesson {align-items:flex-start;flex-wrap:wrap}
+.study-outline .lesson-duration {margin-left:33px}
+.study-progress-label {flex-wrap:wrap}
+.study-layout {grid-template-columns:minmax(0,1fr) 300px}
+.detail-teacher>div {font-size:16px}
+.course-complete strong {font-size:17px}
+.course-complete p {font-size:15px;line-height:1.65}
+.course-complete .btn {font-size:15px}
+.lesson-stage-content .library-eyebrow {font-size:12px}
+.lesson-stage .btn {font-size:16px;padding:12px 18px}
+.lesson-stage h2 {font-size:28px}
+.study-heading h1 {font-size:30px}
+@media(max-width:1250px) {
+  .study-layout {grid-template-columns:1fr}
+  .study-outline {position:static}
+  .study-outline .lesson-duration {margin-left:0}
+  .study-outline .study-lesson {flex-wrap:nowrap}
+}
+@media(max-width:650px) {
+  .study-panel {padding:22px 20px}
+  .study-panel p,.practice-callout p,.detail-description,.detail-section>p:not(.library-eyebrow),.outcome-list li,.detail-requirements ul {font-size:17px}
+  .study-panel h2,.study-panel .section-heading h2,.detail-section h2 {font-size:23px}
+  .study-panel h3,.detail-section h3 {font-size:19px}
+  .study-heading h1 {font-size:26px}
+  .practice-callout {padding:18px;gap:12px}
+  .lesson-reflection-actions {gap:16px}
+  .study-lesson-actions {align-items:flex-start}
+  .study-breadcrumb {overflow-wrap:anywhere}
+  .lesson-stage-top,.lesson-stage-bottom {flex-wrap:wrap;font-size:13px}
+  .lesson-stage h2 {font-size:25px}
+  .study-tabs {gap:23px;padding:0 20px}
+  .study-tabs button {font-size:15px}
+  .notes-footer {align-items:flex-start}
+  .study-resource>div {min-width:160px}
+  .study-resource .btn {margin-left:0}
+  .detail-section .section-heading {flex-wrap:wrap}
+  .course-complete .btn {margin-left:0}
+  .study-bottom-nav {flex-wrap:wrap}
+}
