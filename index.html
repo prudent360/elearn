@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Apex Learning Workspace | Modern Education Environment</title>
+  <meta name="description" content="A distraction-free, modern workspace for learning. Built for modern engineers, product designers, and tech leaders.">
+  <link rel="stylesheet" href="styles.css">
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body class="light-theme">
+  <a class="skip-link" href="#app-content">Skip to content</a>
+  <div id="app-container">
+
+    <nav class="app-rail" aria-label="Workspace shortcuts">
+      <a href="#dashboard" class="rail-logo" aria-label="Apex Learning home"></a>
+      <div class="rail-links">
+        <a href="#dashboard" data-view="dashboard" aria-label="Home"><i data-lucide="house"></i></a>
+        <a href="#assignments" data-view="assignments" aria-label="Assignments"><i data-lucide="file-text"></i></a>
+        <a href="#community" data-view="community" aria-label="Community"><i data-lucide="users"></i></a>
+        <a href="#my-learning" data-view="my-learning" aria-label="My learning"><i data-lucide="layout-grid"></i></a>
+      </div>
+      <a href="#profile" class="rail-bottom" aria-label="Your profile"><i data-lucide="user-round"></i></a>
+    </nav>
+    <button id="sidebar-backdrop" aria-label="Close navigation" hidden></button>
+    <aside id="app-sidebar" aria-label="Main navigation">
+      <div class="sidebar-header"><a href="#dashboard" class="brand-logo">Advanced UI Design<br>&amp; Systems</a><span class="workspace-caption">YOUR LEARNING SPACE</span></div>
+      <nav class="sidebar-nav">
+        <div class="nav-section-title">Learn</div>
+        <a href="#dashboard" class="nav-item" data-view="dashboard"><i data-lucide="house"></i><span>Home</span></a>
+        <a href="#my-learning" class="nav-item" data-view="my-learning"><i data-lucide="circle-play"></i><span>My Learning</span></a>
+        <a href="#course" class="nav-item" data-view="course"><i data-lucide="book-open"></i><span>Course Workspace</span></a>
+        <a href="#certificates" class="nav-item" data-view="certificates"><i data-lucide="award"></i><span>Certificates</span></a>
+        <div class="nav-section-title divided">Community</div>
+        <a href="#community" class="nav-item" data-view="community"><i data-lucide="messages-square"></i><span>Discussions</span></a>
+        <a href="#live-classes" class="nav-item" data-view="live-classes"><i data-lucide="calendar-days"></i><span>Live Classes</span></a>
+        <a href="#assignments" class="nav-item" data-view="assignments"><i data-lucide="clipboard-check"></i><span>Assignments</span></a>
+        <div class="nav-section-title divided">Account</div>
+        <a href="#profile" class="nav-item" data-view="profile"><i data-lucide="user-round"></i><span>Profile</span></a>
+      </nav>
+      <div class="sidebar-footer"><span class="small-brand">apex<span> learning</span></span><span class="prototype-label">Frontend preview</span></div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main id="app-main">
+
+      <!-- Sticky Top Navigation Bar -->
+      <header id="app-header">
+        <div class="header-left"><button id="menu-toggle" class="icon-btn" aria-label="Open navigation" aria-controls="app-sidebar" aria-expanded="false"><i data-lucide="menu"></i></button><span id="page-label">Dashboard</span></div>
+        <div class="header-right">
+          <button class="command-search-btn" id="open-cmd-btn" aria-label="Search lessons"><i data-lucide="search"></i><span>Search lessons...</span><kbd>⌘ K</kbd></button>
+          <a href="#profile" class="user-profile-btn" aria-label="Alex Morgan's profile"><img src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200" alt="" class="avatar-img"></a>
+          <a href="#course" class="btn btn-primary header-continue">Continue Learning <i data-lucide="arrow-right"></i></a>
+        </div>
+      </header>
+
+      <!-- Dynamic View Container -->
+      <div id="app-content" tabindex="-1">
+        <!-- Rendered view content will be injected by app.js -->
+      </div>
+
+    </main>
+
+  </div>
+
+  <!-- Command Palette Modal (Cmd + K) -->
+  <div class="modal-backdrop" id="cmd-palette-modal">
+    <div class="modal-dialog cmd-palette-dialog" role="dialog" aria-modal="true" aria-label="Search lessons">
+      <div class="cmd-input-wrapper">
+        <i data-lucide="search" style="color: var(--text-muted);"></i>
+        <input type="text" class="cmd-input" id="cmd-search-input" placeholder="Search lessons and pages..." aria-label="Search lessons and pages">
+        <span class="kbd-shortcut">ESC</span>
+      </div>
+      <div class="cmd-results-list" id="cmd-results">
+        <!-- Dynamically filled -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Certificate Preview Modal -->
+  <div class="modal-backdrop" id="cert-preview-modal">
+    <div class="modal-dialog" style="max-width: 800px; padding: 0; background: transparent; border: none;">
+      <div id="cert-frame-container">
+        <!-- Dynamic certificate injected here -->
+      </div>
+    </div>
+  </div>
+
+  <!-- New Community Thread Modal -->
+  <div class="modal-backdrop" id="new-thread-modal">
+    <div class="modal-dialog">
+      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px;">
+        <h3 style="font-size: 1.2rem; font-weight: 700;">Start a Discussion Thread</h3>
+        <button class="icon-btn close-modal-btn" data-modal="new-thread-modal"><i data-lucide="x"></i></button>
+      </div>
+      <form id="new-thread-form" style="display: flex; flex-direction: column; gap: 16px;">
+        <div>
+          <label style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 6px; display: block;">Select Channel</label>
+          <select id="thread-channel-select" style="width: 100%; padding: 10px; background: var(--bg-input); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); color: var(--text-primary);">
+            <option value="#ui-ux-design">#ui-ux-design</option>
+            <option value="#fullstack-cohort">#fullstack-cohort</option>
+            <option value="#career-lounge">#career-lounge</option>
+          </select>
+        </div>
+        <div>
+          <label style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 6px; display: block;">Thread Title</label>
+          <input type="text" id="thread-title-input" required placeholder="What would you like to ask or share?" style="width: 100%; padding: 10px; background: var(--bg-input); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); color: var(--text-primary);">
+        </div>
+        <div>
+          <label style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 6px; display: block;">Content</label>
+          <textarea id="thread-content-input" required rows="4" placeholder="Add context, code snippets, or links..." style="width: 100%; padding: 10px; background: var(--bg-input); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); color: var(--text-primary); resize: vertical;"></textarea>
+        </div>
+        <div style="display: flex; justify-content: flex-end; gap: 12px; margin-top: 8px;">
+          <button type="button" class="btn btn-secondary close-modal-btn" data-modal="new-thread-modal">Cancel</button>
+          <button type="submit" class="btn btn-primary">Publish Thread</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- AI Tutor Side Drawer -->
+  <div class="modal-backdrop" id="ai-assistant-modal">
+    <div class="modal-dialog" style="max-width: 480px; margin-left: auto; height: 100vh; max-height: 100vh; border-radius: 0; display: flex; flex-direction: column;">
+      <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border-subtle); padding-bottom: 16px;">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <i data-lucide="sparkles" style="color: var(--accent-secondary);"></i>
+          <h3 style="font-size: 1.1rem; font-weight: 700;">AI Learning Copilot</h3>
+        </div>
+        <button class="icon-btn close-modal-btn" data-modal="ai-assistant-modal"><i data-lucide="x"></i></button>
+      </div>
+      <div id="ai-messages" style="flex: 1; overflow-y: auto; padding: 16px 0; display: flex; flex-direction: column; gap: 12px;">
+        <div style="background: rgba(99, 102, 241, 0.1); border: 1px solid rgba(99, 102, 241, 0.2); padding: 12px 16px; border-radius: var(--radius-md); font-size: 0.88rem;">
+          👋 Hi Alex! I'm your workspace copilot. Ask me to summarize lesson notes, explain complex code concepts, or generate practice quizzes.
+        </div>
+      </div>
+      <div style="border-top: 1px solid var(--border-subtle); pt-3; display: flex; gap: 8px; padding-top: 12px;">
+        <input type="text" id="ai-input" placeholder="Ask anything about your courses..." style="flex: 1; padding: 10px; background: var(--bg-input); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); color: var(--text-primary);">
+        <button class="btn btn-primary btn-sm" id="send-ai-btn"><i data-lucide="send"></i></button>
+      </div>
+    </div>
+  </div>
+
+  <!-- JavaScript Modules -->
+  <script src="data.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
