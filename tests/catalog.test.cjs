@@ -7,7 +7,7 @@ function setup(stored = '{}') {
   const storage = {getItem:key => memory.get(key),setItem:(key,value) => memory.set(key,value)};
   const context = {window:{},Date,Math};
   vm.createContext(context);
-  for (const file of ['data.js','catalog.js']) vm.runInContext(fs.readFileSync(file,'utf8'),context);
+  for (const file of ['data.js','lesson-content.js','catalog.js']) vm.runInContext(fs.readFileSync(file,'utf8'),context);
   const courses = context.window.LMSData.courses;
   return {courses, storage, create:context.window.createLearningCatalog, catalog:context.window.createLearningCatalog(courses,storage)};
 }
@@ -45,4 +45,34 @@ test('Progress agrees with available lessons and completed courses',()=>{
   const {catalog,courses}=setup();assert.equal(catalog.state(courses[0]).progress,29);
   assert.equal(catalog.state(courses[2]).progress,100);
   courses[0].modules[1].lessons[0].completed=true;assert.equal(catalog.state(courses[0]).progress,43);
+});
+
+test('Completion, resume position and notes survive reload without crossing courses',()=>{
+  const {catalog,courses,storage}=setup();
+  catalog.complete('course-101','les-103');
+  catalog.visit('course-101','les-104');
+  catalog.saveNote('course-101','les-103','A note with <tags> and \"quotes\"');
+  const context={window:{},Date,Math};vm.createContext(context);
+  for(const file of ['data.js','lesson-content.js','catalog.js'])vm.runInContext(fs.readFileSync(file,'utf8'),context);
+  const restored=context.window.createLearningCatalog(context.window.LMSData.courses,storage);
+  const first=context.window.LMSData.courses[0];
+  assert.equal(restored.state(first).progress,43);
+  assert.equal(restored.resume(first).id,'les-104');
+  assert.equal(restored.recentCourse().id,'course-101');
+  assert.equal(restored.note('course-101','les-103'),'A note with <tags> and "quotes"');
+  assert.equal(restored.note('course-102','les-103'),null);
+  assert.equal(restored.complete('course-101','les-201'),false);
+});
+test('Completion is idempotent, final lesson yields 100%, and unenrolled courses cannot complete',()=>{
+  const {catalog,courses}=setup();const course=courses[0];
+  catalog.lessons(course).forEach(lesson=>catalog.complete(course.id,lesson.id));
+  catalog.complete(course.id,'les-103');assert.equal(catalog.state(course).progress,100);
+  assert.equal(catalog.state(course).status,'completed');
+  assert.equal(catalog.complete('course-106','course-106-lesson-1'),false);
+  catalog.enroll('course-106');assert.equal(catalog.complete('course-106','course-106-lesson-1'),true);
+});
+test('Empty notes remain empty after recreation and blocked storage keeps notes in memory',()=>{
+  const {catalog,create,courses,storage}=setup();
+  catalog.saveNote('course-101','les-103','');assert.equal(create(courses,storage).note('course-101','les-103'),'');
+  const blocked=create(courses,null);assert.equal(blocked.saveNote('course-101','les-103','hello'),false);assert.equal(blocked.note('course-101','les-103'),'hello');
 });

@@ -9,11 +9,12 @@ document.addEventListener('DOMContentLoaded', () => {
   const catalog = window.createLearningCatalog(data.courses, localPreferences);
   const libraryFilters = { learning: {query:'', filter:'all', category:'all', level:'all', sort:'recommended'}, browse: {query:'', filter:'all', category:'all', level:'all', sort:'recommended'} };
   const escapeHtml = value => String(value).replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
-  let activeCourse = data.courses.find(c => c.id === data.continueCourse.id) || data.courses[0];
-  let activeLesson = activeCourse.modules[1]?.lessons.find(l => l.active) || activeCourse.modules[0].lessons[0];
+  let activeCourse = catalog.recentCourse() || data.courses.find(c => c.id === data.continueCourse.id) || data.courses[0];
+  let activeLesson = catalog.resume(activeCourse);
 
   const contentContainer = document.getElementById('app-content');
   const navItems = document.querySelectorAll('[data-view]');
+  const learningViews = window.createLearningViews({data, catalog, container:contentContainer, escapeHtml, artwork:courseArtwork, notify:notifyLibrary, onLesson(course, lesson) { activeCourse=course; activeLesson=lesson; }});
 
   const menuToggle = document.getElementById('menu-toggle');
   const backdrop = document.getElementById('sidebar-backdrop');
@@ -41,12 +42,14 @@ document.addEventListener('DOMContentLoaded', () => {
   // Initialize Routing
   function handleRoute() {
     const [hash = 'dashboard', parameters = ''] = (window.location.hash.slice(1) || 'dashboard').split('?');
-    if (hash === 'course') {
-      const requested = data.courses.find(course => course.id === new URLSearchParams(parameters).get('id'));
-      if (requested) { activeCourse = requested; const lessons = (requested.modules || []).flatMap(module => module.lessons); activeLesson = lessons.find(lesson => !lesson.completed) || lessons[0]; }
+    const params = new URLSearchParams(parameters);
+    const requestedCourse = params.has('id') ? data.courses.find(course => course.id === params.get('id')) : activeCourse;
+    if (hash === 'course' && requestedCourse) {
+      activeCourse = requestedCourse;
+      activeLesson = params.has('lesson') ? catalog.lessons(activeCourse).find(lesson => lesson.id === params.get('lesson')) : catalog.resume(activeCourse);
     }
-    
-    const labels = {dashboard:'Dashboard', course:'Course Workspace', 'my-learning':'My Learning', 'browse-courses':'Browse Courses', community:'Discussions', 'live-classes':'Live Classes', assignments:'Assignments', certificates:'Certificates', profile:'Profile'};
+
+    const labels = {dashboard:'Dashboard', course:'Lesson Workspace', 'course-details':'Course Details', 'my-learning':'My Learning', 'browse-courses':'Browse Courses', community:'Discussions', 'live-classes':'Live Classes', assignments:'Assignments', certificates:'Certificates', profile:'Profile'};
     document.getElementById('page-label').textContent = labels[hash] || 'Dashboard';
     document.title = `${labels[hash] || 'Dashboard'} | Apex Learning`;
     closeNavigation();
@@ -67,7 +70,10 @@ document.addEventListener('DOMContentLoaded', () => {
         renderDashboard();
         break;
       case 'course':
-        renderCoursePage();
+        learningViews.workspace(requestedCourse, params.get('lesson'));
+        break;
+      case 'course-details':
+        learningViews.details(requestedCourse);
         break;
       case 'my-learning':
         renderMyLearning();
@@ -108,11 +114,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // 1. DASHBOARD VIEW
   function renderDashboard() {
-    const course = data.courses.find(c => c.id === data.continueCourse.id);
+    const course = activeCourse && catalog.state(activeCourse).enrolled ? activeCourse : data.courses.find(c => c.id === data.continueCourse.id);
     const lessons = course.modules.flatMap(m => m.lessons);
     const completed = lessons.filter(l => l.completed).length;
     const progress = Math.round(completed / lessons.length * 100);
-    const next = lessons.find(l => !l.completed) || lessons[lessons.length - 1];
+    const next = catalog.resume(course);
     const session = data.upcomingLiveClasses[0];
     contentContainer.innerHTML = `
       <section class="welcome-banner" aria-labelledby="welcome-title">
@@ -121,205 +127,20 @@ document.addEventListener('DOMContentLoaded', () => {
       </section>
       <div class="overview-grid">
         <section class="surface learning-summary" aria-labelledby="continue-title">
-          <div class="section-heading"><h2 id="continue-title">Continue Learning</h2><a href="#course" class="text-link">View Course <i data-lucide="arrow-right"></i></a></div>
+          <div class="section-heading"><h2 id="continue-title">Continue Learning</h2><a href="#course-details?id=${course.id}" class="text-link">View Course <i data-lucide="arrow-right"></i></a></div>
           <div class="resume-layout"><div class="course-art" aria-hidden="true"><div class="mini-tile"><i data-lucide="blocks"></i></div><div class="mini-tile second"></div></div>
-            <div class="resume-copy"><h3>${course.title}</h3><p>${next.title}</p><div class="resume-progress"><div class="progress-bar-bg" role="progressbar" aria-label="Course progress" aria-valuenow="${progress}" aria-valuemin="0" aria-valuemax="100"><div class="progress-bar-fill" style="width:${progress}%"></div></div><span>${progress}%</span></div><div class="resume-actions"><a href="#course" class="btn btn-primary"><i data-lucide="play"></i> Resume Lesson</a><span><i data-lucide="clock-3"></i> ${next.duration} lesson</span></div></div>
+            <div class="resume-copy"><h3>${course.title}</h3><p>${next.title}</p><div class="resume-progress"><div class="progress-bar-bg" role="progressbar" aria-label="Course progress" aria-valuenow="${progress}" aria-valuemin="0" aria-valuemax="100"><div class="progress-bar-fill" style="width:${progress}%"></div></div><span>${progress}%</span></div><div class="resume-actions"><a href="#course?id=${course.id}" class="btn btn-primary"><i data-lucide="play"></i> Resume Lesson</a><span><i data-lucide="clock-3"></i> ${next.duration} lesson</span></div></div>
           </div>
         </section>
-        <div class="stats-stack"><a href="#course" class="surface stat-card"><span class="stat-icon"><i data-lucide="book-open"></i></span><div><span>Lessons Completed</span><strong>${completed} <small>/ ${lessons.length}</small></strong></div><i data-lucide="chevron-right"></i></a><a href="#profile" class="surface stat-card"><span class="stat-icon"><i data-lucide="trophy"></i></span><div><span>Current Streak</span><strong>${data.currentUser.streakDays} <small>days</small></strong></div><i data-lucide="chevron-right"></i></a></div>
+        <div class="stats-stack"><a href="#course?id=${course.id}" class="surface stat-card"><span class="stat-icon"><i data-lucide="book-open"></i></span><div><span>Lessons Completed</span><strong>${completed} <small>/ ${lessons.length}</small></strong></div><i data-lucide="chevron-right"></i></a><a href="#profile" class="surface stat-card"><span class="stat-icon"><i data-lucide="trophy"></i></span><div><span>Current Streak</span><strong>${data.currentUser.streakDays} <small>days</small></strong></div><i data-lucide="chevron-right"></i></a></div>
       </div>
       <section class="surface upcoming-summary"><div class="section-heading"><h2><i data-lucide="calendar-days"></i> Upcoming Lesson</h2><a href="#live-classes" class="text-link">View Schedule <i data-lucide="arrow-right"></i></a></div><div class="upcoming-row"><span class="stat-icon"><i data-lucide="file-text"></i></span><div><h3>${session.title}</h3><p>Live workshop with ${session.host}</p></div><a href="#live-classes" class="schedule-chip"><i data-lucide="calendar"></i> ${session.time}</a></div></section>
       <div class="dashboard-footnote"><span>A little progress, every day.</span><a href="#my-learning">Explore your learning <i data-lucide="arrow-up-right"></i></a></div>
     `;
   }
 
-  // 2. COURSE PAGE VIEW
   function renderCoursePage() {
-    const course = activeCourse;
-    if (!course.modules?.length) {
-      contentContainer.innerHTML = `<div class="page-header"><div><p class="library-eyebrow">COURSE WORKSPACE</p><h1 class="page-title">${escapeHtml(course.title)}</h1></div></div><section class="surface library-empty"><i data-lucide="book-open"></i><h2>Your course is ready to explore</h2><p>${escapeHtml(course.description)}</p><p>This course has no sample lessons in the frontend preview yet.</p><a href="#my-learning" class="btn btn-primary">Back to My Learning</a></section>`;
-      return;
-    }
-    const currentLesson = activeLesson || course.modules[0].lessons[0];
-    const savedNotes = data.userNotes[currentLesson.id] || `# Notes for ${currentLesson.title}\n\n- Key insights from this session:\n- `;
-
-    contentContainer.innerHTML = `
-      <div style="margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between;">
-        <div>
-          <div style="display: flex; align-items: center; gap: 8px; font-size: 0.82rem; color: var(--text-muted); margin-bottom: 4px;">
-            <a href="#my-learning" style="color: var(--accent-primary);">Courses</a> / <span>${course.title}</span>
-          </div>
-          <h1 style="font-size: 1.4rem; font-weight: 800;">${currentLesson.title}</h1>
-        </div>
-        <div style="display: flex; gap: 10px;">
-          <button class="btn btn-secondary btn-sm" id="prev-lesson-btn"><i data-lucide="chevron-left"></i> Previous</button>
-          <button class="btn btn-primary btn-sm" id="complete-next-btn"><i data-lucide="check"></i> Mark Complete & Next</button>
-        </div>
-      </div>
-
-      <!-- Course Workspace Split View -->
-      <div class="course-workspace-layout">
-        
-        <!-- Left: Module Drawer -->
-        <div class="module-drawer">
-          <div class="module-drawer-title">
-            <span>Course Syllabus</span>
-            <span style="font-size: 0.75rem; color: var(--accent-primary); font-weight: 600;">${course.completedLessonsCount || 16}/24 Done</span>
-          </div>
-
-          <div class="module-accordion-group">
-            ${course.modules.map((mod, mIdx) => `
-              <div class="module-accordion-item">
-                <div class="module-accordion-header">
-                  <span>${mod.title}</span>
-                  <i data-lucide="chevron-down" style="width: 14px;"></i>
-                </div>
-                <div class="lesson-list">
-                  ${mod.lessons.map(les => `
-                    <button class="lesson-item-btn ${les.id === currentLesson.id ? 'active' : ''}" data-lesson-id="${les.id}">
-                      <span class="lesson-status-icon ${les.completed ? 'completed' : ''}">
-                        ${les.completed ? '✓' : ''}
-                      </span>
-                      <span style="flex: 1; truncate">${les.title}</span>
-                      <span style="font-size: 0.72rem; color: var(--text-muted);">${les.duration}</span>
-                    </button>
-                  `).join('')}
-                </div>
-              </div>
-            `).join('')}
-          </div>
-        </div>
-
-        <!-- Right: Video Player & Notebook -->
-        <div class="lesson-content-area">
-          <div class="video-player-container">
-            <video class="custom-video-element" controls poster="${course.thumbnail}">
-              <source src="${currentLesson.videoUrl || 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4'}" type="video/mp4">
-              Your browser does not support HTML5 video.
-            </video>
-          </div>
-
-          <div class="lesson-meta-bar">
-            <div>
-              <div class="lesson-headline">${currentLesson.title}</div>
-              <div style="font-size: 0.85rem; color: var(--text-secondary); margin-top: 2px;">Instructor: ${course.instructor}</div>
-            </div>
-            <div style="display: flex; gap: 8px;">
-              <button class="btn btn-secondary btn-sm" id="bookmark-lesson-btn" title="Save Lesson"><i data-lucide="bookmark"></i> Save</button>
-              <button class="btn btn-secondary btn-sm" id="ask-ai-lesson-btn"><i data-lucide="sparkles" style="color: var(--accent-secondary);"></i> Ask Copilot</button>
-            </div>
-          </div>
-
-          <!-- Bottom Workspace Notebook & Resources -->
-          <div class="workspace-tabs-panel">
-            <div class="filter-tabs" style="margin-bottom: 16px;">
-              <button class="tab-btn active" data-tab="tab-notes">Personal Notes</button>
-              <button class="tab-btn" data-tab="tab-resources">Resources & Downloads</button>
-              <button class="tab-btn" data-tab="tab-qa">Q&A Discussion</button>
-            </div>
-
-            <!-- Tab 1: Notes -->
-            <div id="tab-notes" class="tab-pane">
-              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                <span style="font-size: 0.8rem; color: var(--text-muted);">Markdown Notebook • Auto-saved to workspace</span>
-                <span id="save-indicator" style="font-size: 0.75rem; color: var(--accent-success);">Saved</span>
-              </div>
-              <textarea class="notebook-editor-textarea" id="lesson-notes-editor">${savedNotes}</textarea>
-            </div>
-
-            <!-- Tab 2: Resources -->
-            <div id="tab-resources" class="tab-pane" style="display: none;">
-              <div style="display: flex; flex-direction: column; gap: 10px;">
-                <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px; background: var(--bg-input); border-radius: var(--radius-md);">
-                  <div style="display: flex; align-items: center; gap: 10px;">
-                    <i data-lucide="file-code" style="color: var(--accent-primary);"></i>
-                    <span style="font-size: 0.88rem;">container-queries-starter-lab.zip</span>
-                  </div>
-                  <button class="btn btn-secondary btn-sm"><i data-lucide="download"></i> Download</button>
-                </div>
-                <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px; background: var(--bg-input); border-radius: var(--radius-md);">
-                  <div style="display: flex; align-items: center; gap: 10px;">
-                    <i data-lucide="figma" style="color: #f43f5e;"></i>
-                    <span style="font-size: 0.88rem;">Figma-Design-Tokens-Master.fig</span>
-                  </div>
-                  <button class="btn btn-secondary btn-sm"><i data-lucide="external-link"></i> Open Figma</button>
-                </div>
-              </div>
-            </div>
-
-            <!-- Tab 3: Q&A -->
-            <div id="tab-qa" class="tab-pane" style="display: none;">
-              <p style="font-size: 0.88rem; color: var(--text-secondary); margin-bottom: 12px;">Have a question about this lesson? Ask instructor Elena or discuss with peers.</p>
-              <a href="#community" class="btn btn-outline btn-sm">Jump to Course Discussion Channel</a>
-            </div>
-
-          </div>
-
-        </div>
-
-      </div>
-    `;
-
-    // Notes auto-save event listener
-    const notesEditor = document.getElementById('lesson-notes-editor');
-    const saveIndicator = document.getElementById('save-indicator');
-    if (notesEditor) {
-      notesEditor.addEventListener('input', () => {
-        saveIndicator.textContent = 'Saving...';
-        saveIndicator.style.color = 'var(--accent-warning)';
-        data.userNotes[currentLesson.id] = notesEditor.value;
-        setTimeout(() => {
-          saveIndicator.textContent = 'Saved';
-          saveIndicator.style.color = 'var(--accent-success)';
-        }, 600);
-      });
-    }
-
-    // Switch Lesson Button handlers
-    document.querySelectorAll('.lesson-item-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const lId = btn.dataset.lessonId;
-        for (const mod of course.modules) {
-          const match = mod.lessons.find(l => l.id === lId);
-          if (match) {
-            activeLesson = match;
-            renderCoursePage();
-            if (window.lucide) lucide.createIcons();
-            break;
-          }
-        }
-      });
-    });
-
-    // Mark Complete & Next
-    const completeBtn = document.getElementById('complete-next-btn');
-    if (completeBtn) {
-      completeBtn.addEventListener('click', () => {
-        currentLesson.completed = true;
-        alert(`Awesome job! Marked "${currentLesson.title}" complete.`);
-        renderCoursePage();
-        if (window.lucide) lucide.createIcons();
-      });
-    }
-
-    // Tab switcher inside workspace
-    document.querySelectorAll('.tab-btn').forEach(tBtn => {
-      tBtn.addEventListener('click', () => {
-        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-        document.querySelectorAll('.tab-pane').forEach(p => p.style.display = 'none');
-        tBtn.classList.add('active');
-        const targetPane = document.getElementById(tBtn.dataset.tab);
-        if (targetPane) targetPane.style.display = 'block';
-      });
-    });
-
-    // AI copilot trigger
-    const askAiBtn = document.getElementById('ask-ai-lesson-btn');
-    if (askAiBtn) {
-      askAiBtn.addEventListener('click', () => {
-        document.getElementById('ai-assistant-modal').classList.add('open');
-      });
-    }
+    learningViews.workspace(activeCourse, activeLesson?.id);
   }
 
   // 3. MY LEARNING VIEW
@@ -365,7 +186,7 @@ document.addEventListener('DOMContentLoaded', () => {
         document.querySelector(`[data-save-course="${id}"]`)?.focus();
         notifyLibrary(persisted ? catalog.state(data.courses.find(course => course.id === id)).saved ? 'Course saved to your learning list.' : 'Course removed from your saved list.' : 'Updated for this visit. Browser storage is unavailable.');
       }));
-      document.querySelectorAll('[data-preview-course]').forEach(button => button.addEventListener('click', () => openCoursePreview(button.dataset.previewCourse, page, button)));
+      document.querySelectorAll('[data-preview-course]').forEach(button => button.addEventListener('click', () => window.location.hash = '#course-details?id=' + button.dataset.previewCourse));
       document.getElementById('clear-library-filters')?.addEventListener('click', () => { Object.assign(options, {query:'',filter:'all',category:'all',level:'all'}); renderLibrary(page); document.getElementById('library-search').focus(); });
       if (window.lucide) lucide.createIcons();
     }
@@ -811,16 +632,79 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Theme Toggle (Dark / Light persistent)
   const themeBtn = document.getElementById('theme-toggle-btn');
-  const themeIcon = document.getElementById('theme-icon');
-  
+  const THEME_STORAGE_KEY = 'apex-learning-theme-v1';
+
+  function applyTheme(theme) {
+    document.body.classList.toggle('light-theme', theme !== 'dark');
+    // Look up the icon fresh each time: Lucide replaces the <i data-lucide> element
+    // with a new <svg> node on every render, so a cached reference goes stale.
+    const themeIcon = document.getElementById('theme-icon');
+    if (themeIcon) {
+      themeIcon.setAttribute('data-lucide', theme === 'dark' ? 'sun' : 'moon');
+      if (window.lucide) lucide.createIcons();
+    }
+  }
+
+  let storedTheme = null;
+  try { storedTheme = localPreferences && localPreferences.getItem(THEME_STORAGE_KEY); } catch {}
+  if (storedTheme === 'dark' || storedTheme === 'light') applyTheme(storedTheme);
+
   if (themeBtn) {
     themeBtn.addEventListener('click', () => {
-      document.body.classList.toggle('light-theme');
-      const isLight = document.body.classList.contains('light-theme');
-      if (themeIcon) {
-        themeIcon.setAttribute('data-lucide', isLight ? 'sun' : 'moon');
-        if (window.lucide) lucide.createIcons();
-      }
+      const nextTheme = document.body.classList.contains('light-theme') ? 'dark' : 'light';
+      applyTheme(nextTheme);
+      try { localPreferences && localPreferences.setItem(THEME_STORAGE_KEY, nextTheme); } catch {}
+    });
+  }
+
+  // AI Learning Copilot (simulated assistant — frontend preview, no live model)
+  const aiMessages = document.getElementById('ai-messages');
+  const aiInput = document.getElementById('ai-input');
+  const sendAiBtn = document.getElementById('send-ai-btn');
+
+  function appendAiMessage(text, from) {
+    const bubble = document.createElement('div');
+    bubble.style.cssText = from === 'user'
+      ? 'align-self: flex-end; max-width: 85%; white-space: pre-line; background: var(--accent-primary); color: #fff; padding: 12px 16px; border-radius: var(--radius-md); font-size: 0.88rem;'
+      : 'max-width: 85%; white-space: pre-line; background: rgba(99, 102, 241, 0.1); border: 1px solid rgba(99, 102, 241, 0.2); padding: 12px 16px; border-radius: var(--radius-md); font-size: 0.88rem;';
+    bubble.textContent = text;
+    aiMessages.appendChild(bubble);
+    aiMessages.scrollTop = aiMessages.scrollHeight;
+    return bubble;
+  }
+
+  function generateAiReply(prompt) {
+    const q = prompt.toLowerCase();
+    if (q.includes('quiz')) return `Quick practice quiz on "${activeLesson.title}":\n1. What problem does this lesson solve?\n2. Name one key technique it covers.\n3. How would you apply it in a real project?`;
+    if (q.includes('summar')) return `Summary of "${activeLesson.title}": it's part of ${activeCourse.title}, focused on ${activeCourse.category.toLowerCase()}. Check the Notes tab in the course workspace for your full breakdown.`;
+    if (q.includes('note')) {
+      const note = data.userNotes[activeLesson.id];
+      return note ? `Here's what's in your notes for this lesson:\n\n${note.slice(0, 220)}${note.length > 220 ? '…' : ''}` : `You don't have saved notes for "${activeLesson.title}" yet — add some from the Notes tab in the course workspace.`;
+    }
+    if (q.includes('explain') || q.includes('what is') || q.includes('how')) return `Good question. In the context of ${activeCourse.title}, the fastest way to build intuition is usually to break it into smaller, testable pieces. Want a practice quiz on it instead?`;
+    return `I'm a simulated copilot in this frontend preview, so I can't reach a live model yet — but ask me to "summarize this lesson", "quiz me", or "explain a concept" and I'll answer using your course data.`;
+  }
+
+  function handleAiSend() {
+    const text = aiInput.value.trim();
+    if (!text) return;
+    appendAiMessage(text, 'user');
+    aiInput.value = '';
+    aiInput.disabled = true;
+    sendAiBtn.disabled = true;
+    const typingBubble = appendAiMessage('Thinking…', 'bot');
+    setTimeout(() => {
+      typingBubble.textContent = generateAiReply(text);
+      aiInput.disabled = false;
+      sendAiBtn.disabled = false;
+      aiInput.focus();
+    }, 650);
+  }
+
+  if (sendAiBtn && aiInput) {
+    sendAiBtn.addEventListener('click', handleAiSend);
+    aiInput.addEventListener('keydown', event => {
+      if (event.key === 'Enter') { event.preventDefault(); handleAiSend(); }
     });
   }
 
@@ -871,9 +755,7 @@ document.addEventListener('DOMContentLoaded', () => {
     ];
 
     data.courses.forEach(course => (course.modules || []).forEach(module => module.lessons.forEach(lesson => items.push({text: lesson.title, icon: 'play', action: () => {
-      activeCourse = course; activeLesson = lesson;
-      if (window.location.hash === '#course') { renderCoursePage(); if (window.lucide) lucide.createIcons(); }
-      else window.location.hash = '#course';
+      window.location.hash = '#course?id=' + course.id + '&lesson=' + lesson.id;
     }}))));
     const filtered = q ? items.filter(i => i.text.toLowerCase().includes(q)) : items;
 
