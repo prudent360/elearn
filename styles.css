@@ -1714,3 +1714,170 @@ body.light-theme {--study-body-text:#414d66}
   .course-complete .btn {margin-left:0}
   .study-bottom-nav {flex-wrap:wrap}
 }
+
+/* ==========================================================================
+   Analytics Dashboard Styles
+   ========================================================================== */
+.analytics-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+}
+
+.analytics-metric-card {
+  padding: 20px;
+  border-radius: var(--radius-lg);
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+}
+
+.metric-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.metric-value {
+  font-size: 1.8rem;
+  font-weight: 800;
+  color: var(--text-primary);
+  line-height: 1.2;
+}
+
+.metric-value small {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.metric-label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-top: 4px;
+}
+
+.metric-footer {
+  font-size: 0.76rem;
+  font-weight: 600;
+  margin-top: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.metric-footer.positive {
+  color: var(--accent-success);
+}
+
+.metric-footer.amber-text {
+  color: var(--accent-warning);
+}
+
+.analytics-main-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+}
+
+@media (max-width: 1024px) {
+  .analytics-main-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Weekly Bar Chart */
+.weekly-chart-container {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  height: 180px;
+  padding-top: 24px;
+}
+
+.chart-bar-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  height: 100%;
+  position: relative;
+}
+
+.chart-bar-track {
+  width: 100%;
+  max-width: 32px;
+  flex: 1;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: flex-end;
+  overflow: hidden;
+}
+
+body.light-theme .chart-bar-track {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.chart-bar-fill {
+  width: 100%;
+  background: var(--accent-primary);
+  border-radius: var(--radius-sm);
+  transition: height var(--transition-normal);
+}
+
+.chart-bar-fill.peak-bar {
+  background: linear-gradient(180deg, #818cf8 0%, #4f46e5 100%);
+  box-shadow: 0 0 12px rgba(99, 102, 241, 0.4);
+}
+
+.chart-bar-label {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-top: 8px;
+}
+
+.chart-bar-sublabel {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+
+.chart-bar-tooltip {
+  position: absolute;
+  top: -24px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  background: var(--bg-sidebar);
+  color: var(--text-primary);
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--border-subtle);
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+  pointer-events: none;
+}
+
+.chart-bar-col:hover .chart-bar-tooltip {
+  opacity: 1;
+}
+
+/* Multi-Segment Distribution Bar */
+.multi-progress-bar {
+  height: 10px;
+  width: 100%;
+  border-radius: var(--radius-full);
+  overflow: hidden;
+  display: flex;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.multi-progress-segment {
+  height: 100%;
+  transition: width var(--transition-normal);
+}

@@ -23,7 +23,29 @@ window.LMSData = {
       { id: 3, title: "Code & Craft", desc: "Submitted 5 peer-reviewed projects with top rubric score", icon: "💎", date: "Aug 28, 2026" },
       { id: 4, title: "Top Community Voice", desc: "Received 50+ upvotes on discussion threads", icon: "🏆", date: "Aug 15, 2026" }
     ],
-    activityMap: generateActivityMap()
+    activityMap: generateActivityMap(),
+    weeklyGoalHours: 12,
+    weeklyStats: [
+      { day: "Mon", minutes: 75, date: "Sep 14" },
+      { day: "Tue", minutes: 110, date: "Sep 15" },
+      { day: "Wed", minutes: 45, date: "Sep 16" },
+      { day: "Thu", minutes: 90, date: "Sep 17" },
+      { day: "Fri", minutes: 130, date: "Sep 18" },
+      { day: "Sat", minutes: 60, date: "Sep 19" },
+      { day: "Sun", minutes: 85, date: "Sep 20" }
+    ],
+    categoryBreakdown: [
+      { category: "UI/UX & Design", hours: 42.0, percentage: 50, color: "var(--accent-primary)" },
+      { category: "Engineering & AI", hours: 26.5, percentage: 31, color: "var(--accent-secondary)" },
+      { category: "Product & Strategy", hours: 16.0, percentage: 19, color: "var(--accent-warning)" }
+    ],
+    recentSessions: [
+      { id: "s-1", date: "Today, 2:15 PM", courseTitle: "Advanced UI Design & Systems", lessonTitle: "2.1 Container Queries & Modern Grid Systems", duration: "32 mins", xp: 120 },
+      { id: "s-2", date: "Yesterday, 6:40 PM", courseTitle: "Fullstack AI Application Architecture", lessonTitle: "1.2 Vector Embeddings & Similarity Search", duration: "45 mins", xp: 150 },
+      { id: "s-3", date: "Sep 18, 10:30 AM", courseTitle: "Advanced UI Design & Systems", lessonTitle: "1.2 Fluid Typography Scale & Dynamic Line Heights", duration: "24 mins", xp: 90 },
+      { id: "s-4", date: "Sep 17, 4:00 PM", courseTitle: "Design Systems & Token Pipelines", lessonTitle: "3.1 Automated Token Export with Style Dictionary", duration: "50 mins", xp: 180 },
+      { id: "s-5", date: "Sep 16, 8:20 PM", courseTitle: "Executive Product Strategy", lessonTitle: "2.3 Cohort Analysis & Retention Frameworks", duration: "35 mins", xp: 110 }
+    ]
   },
 
   continueCourse: {
@@ -311,10 +333,10 @@ window.LMSData = {
     {
       id: "cert-8891",
       title: "Certified Systems Architect in Distributed Cloud Engineering",
-      issuedBy: "Apex Learning Workspace & Engineering Guild",
+      issuedBy: "Tekskillup Academy & Engineering Guild",
       issueDate: "August 20, 2026",
-      credentialId: "APX-8891-DC-2026",
-      verifyUrl: "https://workspace-learning.app/verify/APX-8891-DC-2026",
+      credentialId: "TSU-8891-DC-2026",
+      verifyUrl: "https://workspace-learning.app/verify/TSU-8891-DC-2026",
       grade: "Distinction (Top 2%)",
       skills: ["Distributed Systems", "Raft Consensus", "Kafka Event Streams", "Redis Caching"],
       thumbnail: "https://images.unsplash.com/photo-1451187580459-43490279c0fa?auto=format&fit=crop&q=80&w=400"
@@ -322,10 +344,10 @@ window.LMSData = {
     {
       id: "cert-7724",
       title: "Executive Product Strategy & Growth Engineering",
-      issuedBy: "Apex Learning Workspace",
+      issuedBy: "Tekskillup Academy",
       issueDate: "June 14, 2026",
-      credentialId: "APX-7724-PS-2026",
-      verifyUrl: "https://workspace-learning.app/verify/APX-7724-PS-2026",
+      credentialId: "TSU-7724-PS-2026",
+      verifyUrl: "https://workspace-learning.app/verify/TSU-7724-PS-2026",
       grade: "High Honors",
       skills: ["Product Analytics", "Experimentation", "UX Funnels", "Cohort Retention"],
       thumbnail: "https://images.unsplash.com/photo-1460925895917-afdab827c52f?auto=format&fit=crop&q=80&w=400"
@@ -333,10 +355,10 @@ window.LMSData = {
     {
       id: "cert-6512",
       title: "Advanced React Architecture & Performance",
-      issuedBy: "Apex Learning Workspace",
+      issuedBy: "Tekskillup Academy",
       issueDate: "April 02, 2026",
-      credentialId: "APX-6512-RA-2026",
-      verifyUrl: "https://workspace-learning.app/verify/APX-6512-RA-2026",
+      credentialId: "TSU-6512-RA-2026",
+      verifyUrl: "https://workspace-learning.app/verify/TSU-6512-RA-2026",
       grade: "Honors",
       skills: ["Server Components", "State Management", "Bundle Optimization"],
       thumbnail: "https://images.unsplash.com/photo-1555066931-4365d14bab8c?auto=format&fit=crop&q=80&w=400"

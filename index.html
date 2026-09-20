@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Apex Learning Workspace | Modern Education Environment</title>
+  <title>Tekskillup Academy | Modern Learning Workspace</title>
   <meta name="description" content="A distraction-free, modern workspace for learning. Built for modern engineers, product designers, and tech leaders.">
   <link rel="stylesheet" href="styles.css">
   <!-- Lucide Icons -->
@@ -14,7 +14,7 @@
   <div id="app-container">
 
     <nav class="app-rail" aria-label="Workspace shortcuts">
-      <a href="#dashboard" class="rail-logo" aria-label="Apex Learning home"></a>
+      <a href="#dashboard" class="rail-logo" aria-label="Tekskillup Academy home"></a>
       <div class="rail-links">
         <a href="#dashboard" data-view="dashboard" aria-label="Home"><i data-lucide="house"></i></a>
         <a href="#assignments" data-view="assignments" aria-label="Assignments"><i data-lucide="file-text"></i></a>
@@ -25,22 +25,25 @@
     </nav>
     <button id="sidebar-backdrop" aria-label="Close navigation" hidden></button>
     <aside id="app-sidebar" aria-label="Main navigation">
-      <div class="sidebar-header"><a href="#dashboard" class="brand-logo">Advanced UI Design<br>&amp; Systems</a><span class="workspace-caption">YOUR LEARNING SPACE</span></div>
+      <div class="sidebar-header"><a href="#dashboard" class="brand-logo">Tekskillup<br>Academy</a><span class="workspace-caption">YOUR LEARNING SPACE</span></div>
       <nav class="sidebar-nav">
         <div class="nav-section-title">Learn</div>
         <a href="#dashboard" class="nav-item" data-view="dashboard"><i data-lucide="house"></i><span>Home</span></a>
         <a href="#my-learning" class="nav-item" data-view="my-learning"><i data-lucide="circle-play"></i><span>My Learning</span></a>
         <a href="#browse-courses" class="nav-item" data-view="browse-courses"><i data-lucide="compass"></i><span>Browse Courses</span></a>
         <a href="#course" class="nav-item" data-view="course"><i data-lucide="book-open"></i><span>Course Workspace</span></a>
+        <a href="#notes" class="nav-item" data-view="notes"><i data-lucide="notebook-pen"></i><span>Study Notebook</span></a>
+        <a href="#analytics" class="nav-item" data-view="analytics"><i data-lucide="chart-no-axes-combined"></i><span>Analytics</span></a>
         <a href="#certificates" class="nav-item" data-view="certificates"><i data-lucide="award"></i><span>Certificates</span></a>
         <div class="nav-section-title divided">Community</div>
         <a href="#community" class="nav-item" data-view="community"><i data-lucide="messages-square"></i><span>Discussions</span></a>
         <a href="#live-classes" class="nav-item" data-view="live-classes"><i data-lucide="calendar-days"></i><span>Live Classes</span></a>
         <a href="#assignments" class="nav-item" data-view="assignments"><i data-lucide="clipboard-check"></i><span>Assignments</span></a>
-        <div class="nav-section-title divided">Account</div>
+        <div class="nav-section-title divided">Account & Studio</div>
+        <a href="#instructor" class="nav-item" data-view="instructor"><i data-lucide="wrench"></i><span>Instructor Studio</span></a>
         <a href="#profile" class="nav-item" data-view="profile"><i data-lucide="user-round"></i><span>Profile</span></a>
       </nav>
-      <div class="sidebar-footer"><span class="small-brand">apex<span> learning</span></span><span class="prototype-label">Frontend preview</span></div>
+      <div class="sidebar-footer"><span class="small-brand">tekskillup<span> academy</span></span><span class="prototype-label">Frontend preview</span></div>
     </aside>
 
     <!-- Main Content Area -->
@@ -150,6 +153,9 @@
   <script src="lesson-content.js"></script>
   <script src="catalog.js"></script>
   <script src="learning.js"></script>
+  <script src="instructor.js"></script>
+  <script src="notes.js"></script>
+  <script src="analytics.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

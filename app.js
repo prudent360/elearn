@@ -49,9 +49,9 @@ document.addEventListener('DOMContentLoaded', () => {
       activeLesson = params.has('lesson') ? catalog.lessons(activeCourse).find(lesson => lesson.id === params.get('lesson')) : catalog.resume(activeCourse);
     }
 
-    const labels = {dashboard:'Dashboard', course:'Lesson Workspace', 'course-details':'Course Details', 'my-learning':'My Learning', 'browse-courses':'Browse Courses', community:'Discussions', 'live-classes':'Live Classes', assignments:'Assignments', certificates:'Certificates', profile:'Profile'};
+    const labels = {dashboard:'Dashboard', course:'Lesson Workspace', 'course-details':'Course Details', 'my-learning':'My Learning', 'browse-courses':'Browse Courses', community:'Discussions', 'live-classes':'Live Classes', assignments:'Assignments', certificates:'Certificates', profile:'Profile', instructor:'Instructor Studio', notes:'Study Notebook', analytics:'Analytics'};
     document.getElementById('page-label').textContent = labels[hash] || 'Dashboard';
-    document.title = `${labels[hash] || 'Dashboard'} | Apex Learning`;
+    document.title = `${labels[hash] || 'Dashboard'} | Tekskillup Academy`;
     closeNavigation();
     // Update Active Nav Item
     navItems.forEach(item => {
@@ -92,6 +92,15 @@ document.addEventListener('DOMContentLoaded', () => {
         break;
       case 'certificates':
         renderCertificates();
+        break;
+      case 'instructor':
+        if (window.ApexInstructor) window.ApexInstructor.render(contentContainer);
+        break;
+      case 'notes':
+        if (window.ApexNotes) window.ApexNotes.render(contentContainer);
+        break;
+      case 'analytics':
+        if (window.ApexAnalytics) window.ApexAnalytics.render(contentContainer);
         break;
       case 'profile':
         renderProfile();
@@ -502,7 +511,7 @@ document.addEventListener('DOMContentLoaded', () => {
     container.innerHTML = `
       <div class="certificate-frame">
         <div style="font-weight: 700; color: #64748b; font-size: 0.9rem; text-transform: uppercase;">Official Certificate of Completion</div>
-        <div class="cert-header-title" style="margin-top: 8px;">Apex Learning Workspace</div>
+        <div class="cert-header-title" style="margin-top: 8px;">Tekskillup Academy</div>
         
         <p style="margin-top: 24px; color: #475569; font-size: 1.1rem;">This is to certify that</p>
         <div class="student-name-cert">${data.currentUser.name}</div>
@@ -751,6 +760,7 @@ document.addEventListener('DOMContentLoaded', () => {
       { text: "View Enrolled Courses", icon: "compass", action: () => window.location.hash = "#my-learning" },
       { text: "Join Live Workshop Room", icon: "radio", action: () => window.location.hash = "#live-classes" },
       { text: "Open Community Discussions", icon: "message-square", action: () => window.location.hash = "#community" },
+      { text: "View Analytics & Learning Velocity", icon: "chart-no-axes-combined", action: () => window.location.hash = "#analytics" },
       { text: "View Verified Certificates", icon: "award", action: () => window.location.hash = "#certificates" }
     ];
 

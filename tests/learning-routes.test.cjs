@@ -12,11 +12,19 @@ function app() {
   el('body').appendChild=()=>{};
   const context={console,Date,Math,URLSearchParams,Blob,URL:{createObjectURL(blob){lastBlob=blob;return 'blob:sample'},revokeObjectURL(){}},setTimeout(){return 1},clearTimeout(){},window:{location:{hash:''},localStorage:{getItem:k=>memory.get(k),setItem:(k,v)=>memory.set(k,v)},addEventListener(k,f){handlers[k]=f}},document:{createElement(){return {click(){downloads.push({name:this.download,blob:lastBlob})},remove(){}}},body:el('body'),getElementById:el,querySelectorAll(){return []},querySelector:el,addEventListener(k,f){if(k==='DOMContentLoaded')handlers.ready=f}}};
   vm.createContext(context);
-  for(const file of ['data.js','lesson-content.js','catalog.js','learning.js','app.js'])vm.runInContext(fs.readFileSync(file,'utf8'),context);
+  for(const file of ['data.js','lesson-content.js','catalog.js','learning.js','instructor.js','notes.js','analytics.js','app.js'])vm.runInContext(fs.readFileSync(file,'utf8'),context);
   handlers.ready();
   const go=route=>{context.window.location.hash='#'+route;handlers.hashchange();return el('app-content').innerHTML};
   return {go,el,context,downloads};
 }
+test('Analytics dashboard renders metrics and study hours chart',()=>{
+  const {go}=app();
+  const html=go('analytics');
+  assert.ok(html.includes('Analytics Dashboard'));
+  assert.ok(html.includes('Weekly Study Duration'));
+  assert.ok(html.includes('Weekly Goal Progress'));
+  assert.ok(html.includes('Subject Time Allocation'));
+});
 test('All eight course details render course-specific curriculum and instructor',()=>{
   const {go,context}=app();
   for(const course of context.window.LMSData.courses){const html=go('course-details?id='+course.id);assert.ok(html.includes(course.instructor));assert.ok(html.includes('What you’ll learn'));assert.ok(!html.includes('undefined'));}
