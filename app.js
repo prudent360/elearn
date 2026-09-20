@@ -4,6 +4,11 @@
 
 document.addEventListener('DOMContentLoaded', () => {
   const data = window.LMSData;
+  let localPreferences;
+  try { localPreferences = window.localStorage; } catch { localPreferences = null; }
+  const catalog = window.createLearningCatalog(data.courses, localPreferences);
+  const libraryFilters = { learning: {query:'', filter:'all', category:'all', level:'all', sort:'recommended'}, browse: {query:'', filter:'all', category:'all', level:'all', sort:'recommended'} };
+  const escapeHtml = value => String(value).replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
   let activeCourse = data.courses.find(c => c.id === data.continueCourse.id) || data.courses[0];
   let activeLesson = activeCourse.modules[1]?.lessons.find(l => l.active) || activeCourse.modules[0].lessons[0];
 
@@ -26,7 +31,7 @@ document.addEventListener('DOMContentLoaded', () => {
   backdrop.addEventListener('click', closeNavigation);
   document.querySelectorAll('#app-sidebar a').forEach(link => link.addEventListener('click', closeNavigation));
   document.addEventListener('keydown', event => {
-    if (event.key === 'Escape') {
+    if (event.key === 'Escape' && !document.getElementById('course-preview').open) {
       closeNavigation();
       document.querySelectorAll('.modal-backdrop.open').forEach(modal => modal.classList.remove('open'));
       openCmdBtn.focus();
@@ -35,9 +40,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Initialize Routing
   function handleRoute() {
-    const hash = window.location.hash.replace('#', '') || 'dashboard';
+    const [hash = 'dashboard', parameters = ''] = (window.location.hash.slice(1) || 'dashboard').split('?');
+    if (hash === 'course') {
+      const requested = data.courses.find(course => course.id === new URLSearchParams(parameters).get('id'));
+      if (requested) { activeCourse = requested; const lessons = (requested.modules || []).flatMap(module => module.lessons); activeLesson = lessons.find(lesson => !lesson.completed) || lessons[0]; }
+    }
     
-    const labels = {dashboard:'Dashboard', course:'Course Workspace', 'my-learning':'My Learning', community:'Discussions', 'live-classes':'Live Classes', assignments:'Assignments', certificates:'Certificates', profile:'Profile'};
+    const labels = {dashboard:'Dashboard', course:'Course Workspace', 'my-learning':'My Learning', 'browse-courses':'Browse Courses', community:'Discussions', 'live-classes':'Live Classes', assignments:'Assignments', certificates:'Certificates', profile:'Profile'};
     document.getElementById('page-label').textContent = labels[hash] || 'Dashboard';
     document.title = `${labels[hash] || 'Dashboard'} | Apex Learning`;
     closeNavigation();
@@ -62,6 +71,9 @@ document.addEventListener('DOMContentLoaded', () => {
         break;
       case 'my-learning':
         renderMyLearning();
+        break;
+      case 'browse-courses':
+        renderLibrary('browse');
         break;
       case 'community':
         renderCommunity();
@@ -124,6 +136,10 @@ document.addEventListener('DOMContentLoaded', () => {
   // 2. COURSE PAGE VIEW
   function renderCoursePage() {
     const course = activeCourse;
+    if (!course.modules?.length) {
+      contentContainer.innerHTML = `<div class="page-header"><div><p class="library-eyebrow">COURSE WORKSPACE</p><h1 class="page-title">${escapeHtml(course.title)}</h1></div></div><section class="surface library-empty"><i data-lucide="book-open"></i><h2>Your course is ready to explore</h2><p>${escapeHtml(course.description)}</p><p>This course has no sample lessons in the frontend preview yet.</p><a href="#my-learning" class="btn btn-primary">Back to My Learning</a></section>`;
+      return;
+    }
     const currentLesson = activeLesson || course.modules[0].lessons[0];
     const savedNotes = data.userNotes[currentLesson.id] || `# Notes for ${currentLesson.title}\n\n- Key insights from this session:\n- `;
 
@@ -307,89 +323,82 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // 3. MY LEARNING VIEW
-  function renderMyLearning() {
-    contentContainer.innerHTML = `
-      <div class="page-header">
-        <div>
-          <h1 class="page-title">My Learning Workspace</h1>
-          <p class="page-subtitle">Manage all your enrolled courses, tracked progress, and saved learning paths.</p>
-        </div>
-      </div>
+  function renderMyLearning() { renderLibrary('learning'); }
 
-      <!-- Filter Controls -->
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
-        <div class="filter-tabs">
-          <button class="tab-btn active" data-filter="all">All Enrolled (${data.courses.length})</button>
-          <button class="tab-btn" data-filter="in-progress">In Progress</button>
-          <button class="tab-btn" data-filter="completed">Completed</button>
-          <button class="tab-btn" data-filter="saved">Saved Path</button>
-        </div>
-
-        <input type="text" id="search-courses-input" placeholder="Search my courses..." style="padding: 8px 16px; background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); color: var(--text-primary); font-size: 0.88rem; width: 240px;">
-      </div>
-
-      <!-- Courses Grid -->
-      <div class="course-grid" id="learning-courses-grid">
-        ${renderCourseCardsList(data.courses)}
-      </div>
-    `;
-
-    // Filter logic
-    document.querySelectorAll('.filter-tabs .tab-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        document.querySelectorAll('.filter-tabs .tab-btn').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        const filter = btn.dataset.filter;
-        let filtered = data.courses;
-        if (filter === 'in-progress') filtered = data.courses.filter(c => c.status === 'in-progress');
-        if (filter === 'completed') filtered = data.courses.filter(c => c.status === 'completed');
-        if (filter === 'saved') filtered = data.courses.filter(c => c.saved);
-        
-        document.getElementById('learning-courses-grid').innerHTML = renderCourseCardsList(filtered);
-        if (window.lucide) lucide.createIcons();
-      });
-    });
+  function notifyLibrary(message) {
+    const toast = document.getElementById('library-announcement');
+    toast.textContent = message;
+    clearTimeout(notifyLibrary.timer);
+    notifyLibrary.timer = setTimeout(() => { toast.textContent = ''; }, 4500);
   }
 
-  function renderCourseCardsList(list) {
-    if (list.length === 0) {
-      return `<div style="grid-column: 1/-1; padding: 48px; text-align: center; color: var(--text-muted);">No courses found matching this filter.</div>`;
+  function courseArtwork(course, large = false) {
+    return `<div class="catalog-art ${course.art || 'violet'} ${large ? 'large' : ''}" aria-hidden="true"><span class="art-orbit"></span><span class="catalog-art-tile"><i data-lucide="${course.symbol || 'layers'}"></i></span><span class="art-dot"></span><span class="art-caption">${escapeHtml(course.category)}</span></div>`;
+  }
+
+  function renderLibrary(page) {
+    const browse = page === 'browse';
+    const options = libraryFilters[page];
+    const enrolled = data.courses.filter(course => catalog.state(course).enrolled);
+    const completed = enrolled.filter(course => catalog.state(course).status === 'completed').length;
+    contentContainer.innerHTML = `
+      <div class="page-header library-header"><div><p class="library-eyebrow">${browse ? 'FIND YOUR NEXT CHAPTER' : 'MAKE ROOM FOR GROWTH'}</p><h1 class="page-title">${browse ? 'Browse Courses' : 'My Learning'}</h1><p class="page-subtitle">${browse ? 'A new skill. A fresh perspective. Something just for you.' : 'Pick up where you left off. Your next breakthrough is waiting.'}</p></div><a href="#${browse ? 'my-learning' : 'browse-courses'}" class="btn ${browse ? 'btn-secondary' : 'btn-primary'}"><i data-lucide="${browse ? 'book-open' : 'plus'}"></i>${browse ? 'My Learning' : 'Explore Courses'}</a></div>
+      ${browse ? `<section class="catalog-feature"><div><span class="feature-kicker">CURATED FOR CURIOUS MINDS</span><h2>Small steps.<br>Remarkable possibilities.</h2><p>Learn from people who love what they do.<br>Build skills you can put to work.</p><button class="text-link" id="explore-design">Explore design courses <i data-lucide="arrow-right"></i></button></div><div class="feature-art" aria-hidden="true"><span><i data-lucide="sparkles"></i></span><span><i data-lucide="book-open"></i></span><span><i data-lucide="lightbulb"></i></span></div></section>` : `<div class="library-stats"><div class="surface"><span class="stat-icon"><i data-lucide="book-open"></i></span><div><strong>${enrolled.length}</strong><span>Enrolled courses</span></div></div><div class="surface"><span class="stat-icon"><i data-lucide="circle-play"></i></span><div><strong>${enrolled.length - completed}</strong><span>In your learning queue</span></div></div><div class="surface"><span class="stat-icon mint"><i data-lucide="badge-check"></i></span><div><strong>${completed}</strong><span>Courses completed</span></div></div></div>`}
+      <section class="library-controls" aria-label="Course filters">
+        ${browse ? `<div class="category-pills" aria-label="Course categories">${['all', ...new Set(data.courses.map(course => course.category))].map(category => `<button class="category-pill ${options.category === category ? 'active' : ''}" data-category="${escapeHtml(category)}" aria-pressed="${options.category === category}">${category === 'all' ? 'All courses' : escapeHtml(category)}</button>`).join('')}</div>` : `<div class="library-tabs" aria-label="Learning status">${[['all','All enrolled'],['in-progress','In progress'],['not-started','Not started'],['completed','Completed'],['saved','Saved']].map(([key,label]) => `<button data-library-filter="${key}" class="${options.filter === key ? 'active' : ''}" aria-pressed="${options.filter === key}">${label}</button>`).join('')}</div>`}
+        <div class="library-toolbar"><label class="library-search"><i data-lucide="search"></i><input id="library-search" type="search" placeholder="${browse ? 'Find your next course...' : 'Search your courses...'}" aria-label="Search courses" value="${escapeHtml(options.query)}"></label><div class="library-selects">${browse ? `<label>Level<select id="library-level">${['all','Beginner','Intermediate','Advanced'].map(level => `<option value="${level}" ${options.level === level ? 'selected' : ''}>${level === 'all' ? 'All levels' : level}</option>`).join('')}</select></label>` : ''}<label>Sort by<select id="library-sort">${[['recommended','Recommended'],['rating','Highest rated'],['title','Title: A–Z']].map(([value,label]) => `<option value="${value}" ${options.sort === value ? 'selected' : ''}>${label}</option>`).join('')}</select></label></div></div>
+      </section>
+      <div class="library-results-heading"><p id="library-count" role="status" aria-live="polite"></p><span>${browse ? 'Find your pace. Keep your momentum.' : 'One lesson closer to your goals.'}</span></div>
+      <div id="library-grid" class="library-grid"></div>
+      <p class="library-local-note">Demo enrollments and saved courses stay in this browser.</p>`;
+    function refresh() {
+      const list = catalog.select({ page, ...options });
+      document.getElementById('library-count').textContent = `${list.length} ${list.length === 1 ? 'course' : 'courses'}${options.query || options.category !== 'all' || options.level !== 'all' ? ' found' : ''}`;
+      document.getElementById('library-grid').innerHTML = list.length ? list.map(course => {
+        const state = catalog.state(course);
+        return `<article class="catalog-card surface">${courseArtwork(course)}<button class="course-bookmark ${state.saved ? 'saved' : ''}" data-save-course="${course.id}" aria-label="${state.saved ? 'Unsave' : 'Save'} ${escapeHtml(course.title)}" aria-pressed="${state.saved}"><i data-lucide="bookmark"></i></button><div class="catalog-card-body"><div class="catalog-card-meta"><span>${course.level}</span><span class="rating"><i data-lucide="star"></i>${course.rating.toFixed(1)}</span></div><h2><button data-preview-course="${course.id}">${escapeHtml(course.title)}</button></h2><p class="catalog-instructor">By ${escapeHtml(course.instructor)}</p>${browse ? `<p class="catalog-description">${escapeHtml(course.description)}</p>` : `<div class="catalog-progress"><div><span>${state.enrolled ? state.progress === 100 ? 'Completed' : state.progress ? 'Keep it going' : 'Ready when you are' : 'Saved for later'}</span><strong>${state.enrolled ? state.progress + '%' : ''}</strong></div><div class="progress-bar-bg" role="progressbar" aria-label="${escapeHtml(course.title)} progress" aria-valuenow="${state.progress}" aria-valuemin="0" aria-valuemax="100"><div class="progress-bar-fill" style="width:${state.progress}%"></div></div></div>`}<div class="catalog-card-footer"><span><i data-lucide="clock-3"></i>${course.duration}</span>${browse || !state.enrolled ? `<button class="btn btn-secondary btn-sm" data-preview-course="${course.id}">${state.enrolled ? 'View course' : 'Explore course'}<i data-lucide="arrow-right"></i></button>` : `<a class="btn ${state.progress === 100 ? 'btn-secondary' : 'btn-primary'} btn-sm" href="#course?id=${course.id}">${state.progress === 100 ? 'Review course' : state.progress ? 'Continue' : 'Start learning'}<i data-lucide="arrow-right"></i></a>`}</div></div></article>`;
+      }).join('') : `<section class="surface library-empty"><i data-lucide="search-x"></i><h2>${options.filter === 'saved' && !options.query ? 'Make room for your next interest' : 'No courses found'}</h2><p>${options.filter === 'saved' && !options.query ? 'Save courses using the bookmark on any card.' : 'Try a different search or clear your filters to see more courses.'}</p><button class="btn btn-primary" id="clear-library-filters">Clear filters</button><a class="text-link" href="#browse-courses">Browse all courses</a></section>`;
+      document.querySelectorAll('[data-save-course]').forEach(button => button.addEventListener('click', () => {
+        const id = button.dataset.saveCourse;
+        const persisted = catalog.save(id);
+        refresh();
+        document.querySelector(`[data-save-course="${id}"]`)?.focus();
+        notifyLibrary(persisted ? catalog.state(data.courses.find(course => course.id === id)).saved ? 'Course saved to your learning list.' : 'Course removed from your saved list.' : 'Updated for this visit. Browser storage is unavailable.');
+      }));
+      document.querySelectorAll('[data-preview-course]').forEach(button => button.addEventListener('click', () => openCoursePreview(button.dataset.previewCourse, page, button)));
+      document.getElementById('clear-library-filters')?.addEventListener('click', () => { Object.assign(options, {query:'',filter:'all',category:'all',level:'all'}); renderLibrary(page); document.getElementById('library-search').focus(); });
+      if (window.lucide) lucide.createIcons();
     }
-    return list.map(course => `
-      <div class="workspace-card" style="padding: 0;">
-        <img src="${course.thumbnail}" class="course-card-thumb">
-        <div class="course-card-body">
-          <div style="display: flex; justify-content: space-between; align-items: center;">
-            <span class="tag-pill indigo">${course.category}</span>
-            <span style="font-size: 0.8rem; color: var(--text-muted);">★ ${course.rating}</span>
-          </div>
+    document.getElementById('library-search').addEventListener('input', event => { options.query = event.target.value; refresh(); });
+    document.getElementById('library-sort').addEventListener('change', event => { options.sort = event.target.value; refresh(); });
+    document.getElementById('library-level')?.addEventListener('change', event => { options.level = event.target.value; refresh(); });
+    document.querySelectorAll('[data-library-filter], [data-category]').forEach(button => button.addEventListener('click', () => {
+      if (button.dataset.category) options.category = button.dataset.category; else options.filter = button.dataset.libraryFilter;
+      document.querySelectorAll('[data-library-filter], [data-category]').forEach(item => { const active = item.dataset.category ? item.dataset.category === options.category : item.dataset.libraryFilter === options.filter; item.classList.toggle('active', active); item.setAttribute('aria-pressed', String(active)); });
+      refresh();
+    }));
+    document.getElementById('explore-design')?.addEventListener('click', () => { options.category = 'UI/UX & Design'; renderLibrary(page); document.getElementById('library-search').focus(); });
+    refresh();
+  }
 
-          <h3 class="course-card-title">${course.title}</h3>
-
-          <div class="instructor-info">
-            <img src="${course.instructorAvatar}" style="width: 24px; height: 24px; border-radius: 50%; object-fit: cover;">
-            <span>${course.instructor}</span>
-          </div>
-
-          <div style="margin-top: 8px;">
-            <div style="display: flex; justify-content: space-between; font-size: 0.78rem; color: var(--text-secondary); margin-bottom: 4px;">
-              <span>Progress</span>
-              <span>${course.progress}%</span>
-            </div>
-            <div class="progress-bar-bg">
-              <div class="progress-bar-fill" style="width: ${course.progress}%;"></div>
-            </div>
-          </div>
-
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 8px;">
-            <span style="font-size: 0.78rem; color: var(--text-muted);">${course.duration} total</span>
-            <a href="#course" class="btn btn-primary btn-sm">
-              ${course.progress === 100 ? 'Review' : 'Open Workspace'}
-            </a>
-          </div>
-        </div>
-      </div>
-    `).join('');
+  function openCoursePreview(id, page, trigger) {
+    const course = data.courses.find(course => course.id === id);
+    const state = catalog.state(course);
+    const dialog = document.getElementById('course-preview');
+    dialog.innerHTML = `<button class="preview-close icon-btn" aria-label="Close course preview"><i data-lucide="x"></i></button>${courseArtwork(course, true)}<div class="preview-content"><p class="library-eyebrow">${escapeHtml(course.category)} · ${course.level}</p><h2 id="preview-title">${escapeHtml(course.title)}</h2><p class="catalog-instructor">With ${escapeHtml(course.instructor)} · ${course.duration} · ★ ${course.rating.toFixed(1)}</p><p>${escapeHtml(course.description)}</p><div class="preview-note"><i data-lucide="info"></i><span>Frontend preview. Enrollment is saved in this browser.${course.modules?.length ? ' Sample lessons are available.' : ' Lesson content will be added in a later phase.'}</span></div>${state.enrolled ? `<a class="btn btn-primary" id="preview-open" href="#course?id=${course.id}">${state.progress === 100 ? 'Review course' : 'Open course'}<i data-lucide="arrow-right"></i></a>` : '<button class="btn btn-primary" id="preview-enroll">Add to My Learning<i data-lucide="plus"></i></button>'}</div>`;
+    dialog.querySelector('.preview-close').onclick = () => dialog.close();
+    dialog.querySelector('#preview-open')?.addEventListener('click', () => dialog.close());
+    dialog.querySelector('#preview-enroll')?.addEventListener('click', () => {
+      const persisted = catalog.enroll(id);
+      dialog.close();
+      Object.assign(libraryFilters.learning, {query:'',filter:'all',category:'all',level:'all'});
+      notifyLibrary(persisted ? 'Added to My Learning. Your next chapter starts here.' : 'Added for this visit. Browser storage is unavailable.');
+      if (page === 'learning') renderLibrary(page); else window.location.hash = '#my-learning';
+    });
+    dialog.onclose = () => { if (trigger.isConnected) trigger.focus(); };
+    dialog.onclick = event => { if (event.target === dialog) { const rect = dialog.getBoundingClientRect(); if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) dialog.close(); } };
+    dialog.showModal();
+    if (window.lucide) lucide.createIcons();
   }
 
   // 4. COMMUNITY VIEW

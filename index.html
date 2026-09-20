@@ -30,6 +30,7 @@
         <div class="nav-section-title">Learn</div>
         <a href="#dashboard" class="nav-item" data-view="dashboard"><i data-lucide="house"></i><span>Home</span></a>
         <a href="#my-learning" class="nav-item" data-view="my-learning"><i data-lucide="circle-play"></i><span>My Learning</span></a>
+        <a href="#browse-courses" class="nav-item" data-view="browse-courses"><i data-lucide="compass"></i><span>Browse Courses</span></a>
         <a href="#course" class="nav-item" data-view="course"><i data-lucide="book-open"></i><span>Course Workspace</span></a>
         <a href="#certificates" class="nav-item" data-view="certificates"><i data-lucide="award"></i><span>Certificates</span></a>
         <div class="nav-section-title divided">Community</div>
@@ -141,8 +142,11 @@
     </div>
   </div>
 
+  <dialog id="course-preview" class="course-preview-dialog" aria-labelledby="preview-title"></dialog>
+  <div id="library-announcement" class="library-toast" role="status" aria-live="polite"></div>
   <!-- JavaScript Modules -->
   <script src="data.js"></script>
+  <script src="catalog.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

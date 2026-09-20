@@ -379,3 +379,15 @@ function generateActivityMap() {
   }
   return map;
 }
+
+// Additional catalog-only courses for the frontend preview.
+window.LMSData.courses.forEach((course, index) => {
+  course.level = ['Advanced', 'Advanced', 'Advanced', 'Intermediate', 'Advanced'][index];
+  course.art = ['violet', 'peach', 'blue', 'mint', 'rose'][index];
+  course.symbol = ['layers', 'cpu', 'cloud', 'chart-no-axes-combined', 'code-xml'][index];
+});
+window.LMSData.courses.push(
+  { id: 'course-106', title: 'UX Research: From Questions to Insights', category: 'UI/UX & Design', instructor: 'Amelia Brooks', level: 'Beginner', art: 'mint', symbol: 'scan-search', rating: 4.9, duration: '6h 20m', status: 'available', saved: false, description: 'Plan useful interviews, uncover patterns in research, and turn real customer needs into confident design decisions.' },
+  { id: 'course-107', title: 'Brand Identity & Visual Storytelling', category: 'UI/UX & Design', instructor: 'Elena Rostova', level: 'Intermediate', art: 'rose', symbol: 'pen-tool', rating: 4.8, duration: '8h 15m', status: 'available', saved: false, description: 'Build a memorable visual identity with expressive typography, thoughtful color palettes, and a cohesive brand story.' },
+  { id: 'course-108', title: 'Product Thinking for Everyday Decisions', category: 'Product & Strategy', instructor: 'Julian Thorne', level: 'Beginner', art: 'peach', symbol: 'lightbulb', rating: 4.7, duration: '4h 40m', status: 'available', saved: false, description: 'Frame the right problems, prioritize opportunities, and connect small product decisions to outcomes that matter.' }
+);
