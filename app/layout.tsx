@@ -1,6 +1,5 @@
 import './globals.css';
-import { LearningProvider } from '@/context/LearningContext';
-import { AppLayout } from '@/components/layout/AppLayout';
+import { RootShell } from '@/components/layout/RootShell';
 
 export const metadata = {
   title: 'Tekskillup Academy | Modern Learning Workspace',
@@ -15,20 +14,13 @@ export default function RootLayout({
   return (
     <html lang="en">
       <head>
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        <link
-          href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
-          rel="stylesheet"
-        />
+        <meta name="theme-color" content="#f6f7fb" />
       </head>
       <body className="light-theme">
         <a className="skip-link" href="#app-content">
           Skip to content
         </a>
-        <LearningProvider>
-          <AppLayout>{children}</AppLayout>
-        </LearningProvider>
+        <RootShell>{children}</RootShell>
       </body>
     </html>
   );

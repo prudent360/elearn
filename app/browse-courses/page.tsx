@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useLearning } from '@/context/LearningContext';
-import { BookOpen, Search, Bookmark, Clock3, ArrowRight, Sparkles, Lightbulb } from 'lucide-react';
+import { BookOpen, Search, Bookmark, Clock3, ArrowRight, Sparkles, Lightbulb, LockKeyhole } from 'lucide-react';
 
 export default function BrowseCoursesPage() {
   const { data, savedCourses, toggleSaveCourse } = useLearning();
@@ -103,7 +103,7 @@ export default function BrowseCoursesPage() {
 
               <div className="catalog-card-body">
                 <div className="catalog-card-meta">
-                  <span>{course.level}</span>
+                  <span>{course.level} · {course.access === 'pro' ? 'Pro' : 'Free'}</span>
                   <span className="rating">★ {course.rating.toFixed(1)}</span>
                 </div>
                 <h2>
@@ -117,7 +117,7 @@ export default function BrowseCoursesPage() {
                     <Clock3 style={{ width: 14, height: 14 }} /> {course.duration}
                   </span>
                   <Link href={`/course?id=${course.id}`} className="btn btn-primary btn-sm">
-                    Explore course <ArrowRight style={{ width: 14, height: 14 }} />
+                    {course.access === 'pro' ? <LockKeyhole style={{ width: 14, height: 14 }} /> : null} Explore course <ArrowRight style={{ width: 14, height: 14 }} />
                   </Link>
                 </div>
               </div>

@@ -35,6 +35,7 @@ export interface Course {
   art: string;
   symbol: string;
   modules: Module[];
+  access?: 'free' | 'pro';
   outcomes?: string[];
   requirements?: string[];
 }

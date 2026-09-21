@@ -8,17 +8,20 @@ Use Node 22.13 or later (tested on 22.20). Install dependencies with `npm ci`, t
 
 Open `/login`, choose **Set up the administrator**, and enter your name, email, password (12–128 characters), and `LMS_SETUP_TOKEN` from `.env.local`. This works only before the first administrator exists. Ordinary registration always creates a learner, regardless of submitted role fields. Administrators can grant instructor/admin roles and disable accounts in `/admin`. Role changes invalidate that user's sessions. There are no default passwords or pre-created human accounts.
 
-Local data is stored in `.data/lms.sqlite`; submissions are in `.data/uploads`. Mount both on persistent storage for a Node deployment. Back up the database and uploads together. Never expose `.data` as public web content. The database migration in `db/migrations/0001_lms.sql` runs idempotently; seed content contains courses only, never fake learner activity or grades.
+Local data is stored in `.data/lms.sqlite`; submissions are in `.data/uploads`. Mount both on persistent storage for a Node deployment. Back up the database and uploads together. Never expose `.data` as public web content. Migrations in `db/migrations/*.sql` run in filename order on every startup and are each idempotent; seed content contains courses only, never fake learner activity or grades.
+
+Outgoing email (account verification, password reset) sends through [Resend](https://resend.com) when `LMS_EMAIL_API_KEY` and `LMS_EMAIL_FROM` are set. Leave them blank in development: the message, including the verification code or reset link, is logged to the console instead of being sent, so the flow is fully testable without a provider account.
 
 ## Hosting
 
 `npm run build` builds the native Next server. `npm run build:sites` exports the client pages in an isolated temporary directory and packages the same API service as a Worker. The local API route uses SQLite; the Worker uses prepared D1 statements and R2 objects. Static export does not remove authentication or authorization: every `/api/*` route authenticates and authorizes its request on the server. `/course?id=...` supports newly created courses without rebuilding; old `/course/:id` links redirect on the hosted Worker.
 
-Sites bindings: `DB` (D1) and `FILES` (R2). Runtime values: `LMS_SETUP_TOKEN` (secret), `LMS_ORIGIN` (exact HTTPS origin). Configure these through Sites environment settings. The setup credential is not part of frontend assets. Existing Sites audience settings remain private; app email/password accounts are separate from that hosting gate. Making the academy available without the private hosting gate is a separate audience change.
+Sites bindings: `DB` (D1) and `FILES` (R2). Runtime values: `LMS_SETUP_TOKEN` (secret), `LMS_ORIGIN` (exact HTTPS origin), and optionally `LMS_EMAIL_API_KEY` (secret) and `LMS_EMAIL_FROM` for outgoing email. Payments use `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_PRO_MONTHLY`, `STRIPE_PRICE_PRO_YEARLY`, and optional `STRIPE_PORTAL_CONFIGURATION_ID`. Configure these through Sites environment settings. The Stripe webhook URL is `/api/billing/webhook`. The setup and Stripe credentials are never part of frontend assets. Existing Sites audience settings remain private; app email/password accounts are separate from that hosting gate. Making the academy available without the private hosting gate is a separate audience change.
 
 ## Implemented workflows
 
 - Register, sign in/out, password change, hashed sessions, expiry, disabled-user rejection.
+- Email verification via a 6-digit one-time code (entered in-app, 15-minute expiry) and password reset via a single-use emailed link (1-hour expiry); both send through a configurable provider (Resend), with a resend option and no account-enumeration on reset requests.
 - Course catalog, enrollment, bookmarks, per-account completion, last lesson, private notes, downloadable resources.
 - Instructor-owned course drafts, modules, lessons, publication, archive, and enrollment roster; administrators can assign ownership.
 - Assignment creation, text/link submissions, protected attachments (PDF/TXT/ZIP/PNG/JPEG, 10 MB, five per assignment), grading and feedback.
@@ -27,16 +30,17 @@ Sites bindings: `DB` (D1) and `FILES` (R2). Runtime values: `LMS_SETUP_TOKEN` (s
 - Live session scheduling with enrollment-gated meeting links.
 - Profile, saved preferences, weekly goals, completion-derived activity and estimated lesson durations.
 - Administrator role/access management and administrative audit events.
+- Stripe-hosted monthly/yearly Pro checkout, signed idempotent webhooks, entitlement-gated courses, and Stripe Customer Portal management. Payment never grants an instructor or administrator role.
 
 ## Security and behavior
 
-Passwords use salted scrypt (N=32768, r=8, p=1); sessions store only token hashes. Production cookies are Secure, HttpOnly, SameSite=Lax and use a `__Host-` prefix. State-changing API calls require the configured same Origin. Request sizes, field lengths, URLs, role changes and publication are validated server-side. SQL values are bound parameters. Read access to notes, resources, certificates and attachments is enforced per account or course owner. Rate-limit counters are persistent. Existing lessons with learner activity cannot be silently removed. Profile headlines cannot change authorization roles. Uploads are attachment downloads with nosniff and are never rendered as executable inline content.
+Passwords use salted scrypt (N=32768, r=8, p=1); new accounts require 12–128 characters and sessions store only token hashes. Production cookies are Secure, HttpOnly, SameSite=Lax and use a `__Host-` prefix. State-changing API calls require the configured same Origin, except the Stripe webhook, which requires a current HMAC signature. Checkout price IDs are selected server-side. Request sizes, field lengths, URLs, role changes and publication are validated server-side. SQL values are bound parameters. Read access to notes, resources, certificates and attachments is enforced per account or course owner. Rate-limit counters are persistent. Existing lessons with learner activity cannot be silently removed. Profile headlines cannot change authorization roles. Uploads are attachment downloads with nosniff and are never rendered as executable inline content.
 
-Live classes use an instructor-supplied HTTPS meeting link; this app does not operate a video-conference server. Videos use instructor-supplied HTTPS URLs. No email sender is connected: email verification, password-reset email delivery and notification sending are not yet implemented. Notification settings are saved preferences, not delivery guarantees. Two-factor authentication is explicitly shown as unconfigured. Analytics estimate time from completed lesson durations, not watch-time telemetry. Existing sample teaching content remains seed content.
+Live classes use an instructor-supplied HTTPS meeting link; this app does not operate a video-conference server. Videos use instructor-supplied HTTPS URLs. Verification and reset emails send through a configurable provider and are best-effort: a delivery failure is logged but never blocks registration, login, or the reset request itself, and reset requests always respond identically whether or not the address has an account. Digest/notification email sending beyond these two flows is not yet implemented; notification settings remain saved preferences, not delivery guarantees. Two-factor authentication is explicitly shown as unconfigured. Analytics estimate time from completed lesson durations, not watch-time telemetry. Existing sample teaching content remains seed content.
 
 ## Verification
 
-- `npm run test:backend`: actual SQLite requests covering accounts, CSRF, learner isolation, instructor ownership, publication, grading, unique certificates, session invalidation, discussions, and reopening persistent storage.
+- `npm run test:backend`: actual SQLite requests covering accounts, CSRF, learner isolation, instructor ownership, publication, grading, unique certificates, session invalidation, discussions, email verification codes/resend, password-reset token consumption, and reopening persistent storage.
 - `npm run typecheck`: Next/React TypeScript checks.
 - `npm run build:sites && node tests/worker-smoke.mjs`: hosted asset/API smoke with the D1-compatible adapter and protected uploads.
 

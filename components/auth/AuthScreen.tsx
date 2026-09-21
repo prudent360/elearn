@@ -1,8 +1,285 @@
 'use client';
 import { useState } from 'react';
-export function AuthScreen({setupRequired,onSignedIn}:{setupRequired:boolean;onSignedIn:()=>Promise<void>}) {
-  const [mode,setMode]=useState<'login'|'register'|'setup'>('login');
-  const [busy,setBusy]=useState(false);const [error,setError]=useState('');
-  async function submit(event:React.FormEvent<HTMLFormElement>){event.preventDefault();setBusy(true);setError('');const form=new FormData(event.currentTarget);try{const response=await fetch('/api/auth/'+mode,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.fromEntries(form))});const result=await response.json();if(!response.ok)throw Error(result.error);await onSignedIn()}catch(error){setError(error instanceof Error?error.message:'Unable to sign in.')}finally{setBusy(false)}}
-  return <main className="auth-shell"><section className="surface auth-card"><p className="library-eyebrow">TEKSKILLUP ACADEMY</p><h1>{mode==='login'?'Welcome back':mode==='setup'?'Set up your academy':'Start your learning journey'}</h1><p>{mode==='setup'?'Create the administrator account using your server setup credential.':'Your courses, notes, and progress—saved to your account.'}</p><form onSubmit={submit} className="backend-form">{mode!=='login'&&<label>Full name<input name="name" required maxLength={100} autoComplete="name" /></label>}<label>Email<input name="email" type="email" required maxLength={254} autoComplete="email" /></label><label>Password<input name="password" type="password" required minLength={12} maxLength={128} autoComplete={mode==='login'?'current-password':'new-password'} /><small>At least 12 characters.</small></label>{mode==='setup'&&<label>Administrator setup credential<input name="setupToken" type="password" required autoComplete="off" /></label>}{error&&<p role="alert" className="backend-error">{error}</p>}<button className="btn btn-primary" disabled={busy}>{busy?'Please wait…':mode==='login'?'Sign in':mode==='setup'?'Create administrator':'Create learner account'}</button></form><div className="auth-links"><button onClick={()=>{setMode(mode==='login'?'register':'login');setError('')}}>{mode==='login'?'New here? Create an account':'Already have an account? Sign in'}</button>{setupRequired&&mode!=='setup'&&<button onClick={()=>{setMode('setup');setError('')}}>Set up the administrator</button>}</div></section></main>;
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+
+interface AuthScreenProps {
+  setupRequired: boolean;
+  onSignedIn: () => Promise<void>;
+}
+
+export function AuthScreen({ setupRequired, onSignedIn }: AuthScreenProps) {
+  const router = useRouter();
+  const [mode, setMode] = useState<'login' | 'register' | 'setup'>('login');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [name, setName] = useState('');
+  const [setupToken, setSetupToken] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  async function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setBusy(true);
+    setError('');
+    const payload: Record<string, string> = { email: email.trim(), password };
+    if (mode === 'register') payload.name = name.trim();
+    if (mode === 'setup') {
+      payload.name = name.trim();
+      payload.setupToken = setupToken.trim();
+    }
+    try {
+      const res = await fetch('/api/auth/' + mode, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Request failed.');
+      await onSignedIn();
+      if (mode !== 'login') router.push('/verify-email');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to complete sign in.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="auth-split">
+      {/* ──── Left Panel: Branding ──── */}
+      <aside className="auth-brand-panel">
+        <div className="auth-brand-inner">
+          {/* Animated orbs */}
+          <div className="auth-orb auth-orb-1" />
+          <div className="auth-orb auth-orb-2" />
+          <div className="auth-orb auth-orb-3" />
+
+          <div className="auth-brand-content">
+            <div className="auth-brand-logo">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polygon points="12 2 2 7 12 12 22 7 12 2" />
+                <polyline points="2 17 12 22 22 17" />
+                <polyline points="2 12 12 17 22 12" />
+              </svg>
+            </div>
+            <h1 className="auth-brand-title">Tekskillup<br />Academy</h1>
+            <p className="auth-brand-tagline">
+              Master world-class skills with AI-powered courses, live cohorts, and real-world portfolio projects.
+            </p>
+
+            {/* Feature pills */}
+            <div className="auth-features">
+              <div className="auth-feature-pill">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                <span>Interactive Courses</span>
+              </div>
+              <div className="auth-feature-pill">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                <span>Live Cohort Classes</span>
+              </div>
+              <div className="auth-feature-pill">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                <span>Portfolio Projects</span>
+              </div>
+              <div className="auth-feature-pill">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                <span>Verified Certificates</span>
+              </div>
+            </div>
+
+            {/* Social proof */}
+            <div className="auth-social-proof">
+              <div className="auth-avatars-stack">
+                <img src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=80" alt="" />
+                <img src="https://images.unsplash.com/photo-1580489944761-15a19d654956?auto=format&fit=crop&q=80&w=80" alt="" />
+                <img src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=80" alt="" />
+                <span className="auth-avatars-count">+2,400</span>
+              </div>
+              <p className="auth-proof-text">learners already building the future</p>
+            </div>
+          </div>
+
+          <p className="auth-brand-footer">© 2026 Tekskillup Academy</p>
+        </div>
+      </aside>
+
+      {/* ──── Right Panel: Form ──── */}
+      <main className="auth-form-panel">
+        <div className="auth-form-wrapper">
+          {/* Mobile brand (shown only on small screens) */}
+          <div className="auth-mobile-brand">
+            <div className="auth-brand-logo">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <polygon points="12 2 2 7 12 12 22 7 12 2" />
+                <polyline points="2 17 12 22 22 17" />
+                <polyline points="2 12 12 17 22 12" />
+              </svg>
+            </div>
+            <span className="auth-mobile-name">Tekskillup Academy</span>
+          </div>
+
+          {/* Tabs */}
+          <div className="auth-tabs">
+            <button
+              type="button"
+              className={`auth-tab ${mode === 'login' ? 'active' : ''}`}
+              onClick={() => { setMode('login'); setError(''); }}
+            >
+              Sign In
+            </button>
+            <button
+              type="button"
+              className={`auth-tab ${mode === 'register' ? 'active' : ''}`}
+              onClick={() => { setMode('register'); setError(''); }}
+            >
+              Register
+            </button>
+            {setupRequired && (
+              <button
+                type="button"
+                className={`auth-tab ${mode === 'setup' ? 'active' : ''}`}
+                onClick={() => { setMode('setup'); setError(''); }}
+              >
+                Setup
+              </button>
+            )}
+          </div>
+
+          {/* Heading */}
+          <div className="auth-heading">
+            <h2>
+              {mode === 'login'
+                ? 'Welcome back'
+                : mode === 'setup'
+                ? 'Administrator setup'
+                : 'Create your account'}
+            </h2>
+            <p>
+              {mode === 'login'
+                ? 'Enter your credentials to access your workspace.'
+                : mode === 'setup'
+                ? 'Initialize the root admin with your setup token.'
+                : 'Start learning with courses built by industry experts.'}
+            </p>
+          </div>
+
+          {/* Form */}
+          <form onSubmit={submit} className="auth-form">
+            {mode !== 'login' && (
+              <div className="auth-field">
+                <label htmlFor="auth-name">Full Name</label>
+                <input
+                  id="auth-name"
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="Alex Morgan"
+                  required
+                  maxLength={100}
+                  autoComplete="name"
+                />
+              </div>
+            )}
+
+            <div className="auth-field">
+              <label htmlFor="auth-email">Email</label>
+              <input
+                id="auth-email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="you@email.com"
+                required
+                maxLength={254}
+                autoComplete="email"
+              />
+            </div>
+
+            <div className="auth-field">
+              <div className="auth-field-row">
+                <label htmlFor="auth-password">Password</label>
+                {mode === 'login' && (
+                  <Link href="/reset-password" className="auth-link-small">
+                    Forgot?
+                  </Link>
+                )}
+              </div>
+              <input
+                id="auth-password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder={mode === 'login' ? '••••••••' : 'Min. 6 characters'}
+                required
+                minLength={mode === 'login' ? 1 : 6}
+                maxLength={128}
+                autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
+              />
+            </div>
+
+            {mode === 'setup' && (
+              <div className="auth-field">
+                <label htmlFor="auth-setup-token">Setup Token</label>
+                <input
+                  id="auth-setup-token"
+                  type="password"
+                  value={setupToken}
+                  onChange={(e) => setSetupToken(e.target.value)}
+                  placeholder="LMS_SETUP_TOKEN value"
+                  required
+                  autoComplete="off"
+                />
+              </div>
+            )}
+
+            {error && (
+              <div role="alert" className="auth-error">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <circle cx="12" cy="12" r="10" />
+                  <line x1="12" y1="8" x2="12" y2="12" />
+                  <line x1="12" y1="16" x2="12.01" y2="16" />
+                </svg>
+                {error}
+              </div>
+            )}
+
+            <button type="submit" className="btn btn-primary auth-submit" disabled={busy}>
+              {busy ? (
+                <>
+                  <span className="auth-spinner" />
+                  Authenticating…
+                </>
+              ) : mode === 'login' ? (
+                'Sign in →'
+              ) : mode === 'setup' ? (
+                'Create Administrator'
+              ) : (
+                'Create Account →'
+              )}
+            </button>
+          </form>
+
+          {/* Footer toggle */}
+          <p className="auth-switch">
+            {mode === 'login' ? (
+              <>
+                New here?{' '}
+                <button type="button" onClick={() => { setMode('register'); setError(''); }}>
+                  Create an account
+                </button>
+              </>
+            ) : (
+              <>
+                Already have an account?{' '}
+                <button type="button" onClick={() => { setMode('login'); setError(''); }}>
+                  Sign in
+                </button>
+              </>
+            )}
+          </p>
+        </div>
+      </main>
+    </div>
+  );
 }

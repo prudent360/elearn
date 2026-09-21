@@ -7,7 +7,6 @@ import {
   House,
   CirclePlay,
   Compass,
-  BookOpen,
   NotebookPen,
   ChartNoAxesCombined,
   Award,
@@ -16,7 +15,10 @@ import {
   ClipboardCheck,
   Wrench,
   UserRound,
-  Settings
+  Settings,
+  CreditCard,
+  ShieldCheck,
+  LogOut
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -25,14 +27,13 @@ interface SidebarProps {
 
 export function Sidebar({ onClose }: SidebarProps) {
   const pathname = usePathname();
-  const {account}=useLearning();
+  const { account, billing, logout } = useLearning();
 
   const navItems = [
     { section: 'Learn' },
     { href: '/', label: 'Home', icon: House },
     { href: '/my-learning', label: 'My Learning', icon: CirclePlay },
     { href: '/browse-courses', label: 'Browse Courses', icon: Compass },
-    { href: '/course?id=course-101', label: 'Course Workspace', icon: BookOpen },
     { href: '/notes', label: 'Study Notebook', icon: NotebookPen },
     { href: '/analytics', label: 'Analytics', icon: ChartNoAxesCombined },
     { href: '/certificates', label: 'Certificates', icon: Award },
@@ -41,7 +42,9 @@ export function Sidebar({ onClose }: SidebarProps) {
     { href: '/live-classes', label: 'Live Classes', icon: CalendarDays },
     { href: '/assignments', label: 'Assignments', icon: ClipboardCheck },
     { section: 'Account & Studio', divided: true },
-    { href: '/instructor', label: 'Instructor Studio', icon: Wrench },
+    ...(account.role !== 'learner' ? [{ href: '/instructor', label: 'Instructor Studio', icon: Wrench }] : []),
+    ...(account.role === 'admin' ? [{ href: '/admin', label: 'Administration', icon: ShieldCheck }] : []),
+    { href: '/pricing', label: billing.plan === 'pro' ? 'Pro membership' : 'Plans & billing', icon: CreditCard },
     { href: '/profile', label: 'Profile', icon: UserRound },
     { href: '/settings', label: 'Settings', icon: Settings }
   ];
@@ -68,7 +71,6 @@ export function Sidebar({ onClose }: SidebarProps) {
             );
           }
 
-          if(item.href==='/instructor'&&account.role==='learner')return null;
           const IconComponent = item.icon;
           const isActive = pathname === item.href || (item.href !== '/' && pathname?.startsWith(item.href.split('?')[0]));
 
@@ -87,10 +89,8 @@ export function Sidebar({ onClose }: SidebarProps) {
       </nav>
 
       <div className="sidebar-footer">
-        <span className="small-brand">
-          tekskillup<span> academy</span>
-        </span>
-        <span className="prototype-label">Next.js App</span>
+        <div className="sidebar-account"><span className="sidebar-avatar">{account.name.slice(0,1).toUpperCase()}</span><div><strong>{account.name}</strong><span>{account.role} · {billing.plan}</span></div></div>
+        <button className="sidebar-signout" onClick={() => void logout()}><LogOut size={17}/> Sign out</button>
       </div>
     </aside>
   );

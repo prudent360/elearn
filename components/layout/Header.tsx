@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useLearning } from '@/context/LearningContext';
-import { Menu, Search, Sun, Moon, ArrowRight, Settings } from 'lucide-react';
+import { Menu, Search, Sun, Moon, ArrowRight } from 'lucide-react';
 
 interface HeaderProps {
   onOpenNav: () => void;
@@ -22,12 +22,14 @@ const pageTitles: Record<string, string> = {
   '/assignments': 'Assignments',
   '/instructor': 'Instructor Studio',
   '/profile': 'Profile',
-  '/settings': 'Settings'
+  '/settings': 'Settings',
+  '/pricing': 'Plans & billing',
+  '/login': 'Sign In / Account'
 };
 
 export function Header({ onOpenNav, onOpenCmd }: HeaderProps) {
   const pathname = usePathname() || '/';
-  const { theme, toggleTheme, data } = useLearning();
+  const { theme, toggleTheme, data, account, billing } = useLearning();
 
   let title = pageTitles[pathname];
   if (!title && pathname.startsWith('/course')) {
@@ -75,24 +77,14 @@ export function Header({ onOpenNav, onOpenCmd }: HeaderProps) {
         </button>
 
         <Link
-          href="/settings"
-          className="icon-btn"
-          aria-label="Account Settings"
-        >
-          <Settings style={{ width: 18, height: 18 }} />
-        </Link>
-
-        <Link
           href="/profile"
           className="user-profile-btn"
           aria-label={`${data.currentUser.name}'s profile`}
         >
-          <img
-            src={data.currentUser.avatar}
-            alt={data.currentUser.name}
-            className="avatar-img"
-          />
+          {data.currentUser.avatar ? <img src={data.currentUser.avatar} alt={data.currentUser.name} className="avatar-img" /> : <span className="header-avatar-fallback">{account.name.slice(0,1).toUpperCase()}</span>}
         </Link>
+
+        <Link href="/pricing" className="header-plan-chip">{billing.plan === 'pro' ? 'Pro' : 'Free'}</Link>
 
         <Link href="/course?id=course-101" className="btn btn-primary header-continue">
           Continue Learning <ArrowRight style={{ width: 16, height: 16 }} />

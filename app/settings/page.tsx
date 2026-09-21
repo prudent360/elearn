@@ -1,8 +1,9 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { useLearning } from '@/context/LearningContext';
-import { User, Bell, Globe, Shield, Save, CheckCircle2 } from 'lucide-react';
+import { User, Bell, Globe, Shield, Save, CheckCircle2, CreditCard } from 'lucide-react';
 
 const avatarPresets = [
   'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200',
@@ -13,18 +14,24 @@ const avatarPresets = [
 
 export default function SettingsPage() {
   const {
-    data, api, logout,
+    data, api, logout, account,
     updateUserProfile,
     notificationSettings,
     updateNotificationSettings,
     workspaceSettings,
-    updateWorkspaceSettings
+    updateWorkspaceSettings,
+    resendVerification, billing, openBillingPortal
   } = useLearning();
 
   const user = data.currentUser;
 
-  const [activeTab, setActiveTab] = useState<'profile' | 'notifications' | 'workspace' | 'security'>('profile');
+  const [activeTab, setActiveTab] = useState<'profile' | 'notifications' | 'workspace' | 'billing' | 'security'>('profile');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [verifyStatus, setVerifyStatus] = useState('');
+
+  const handleResendVerification = async () => {
+    setVerifyStatus(await resendVerification() ? 'A new code was sent. Check your inbox.' : 'Unable to send a new code.');
+  };
 
   // Profile Form State
   const [name, setName] = useState(user.name);
@@ -99,14 +106,15 @@ export default function SettingsPage() {
       )}
 
       {/* Settings Layout */}
-      <div style={{ display: 'grid', gridTemplateColumns: '240px 1fr', gap: 24 }}>
+      <div className="settings-layout">
         {/* Navigation Sidebar */}
-        <div className="surface" style={{ padding: 12, borderRadius: 'var(--radius-lg)', height: 'fit-content' }}>
+        <div className="surface settings-nav" style={{ padding: 12, borderRadius: 'var(--radius-lg)', height: 'fit-content' }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
             {[
               { id: 'profile', label: 'Profile Information', icon: User },
               { id: 'notifications', label: 'Notifications', icon: Bell },
               { id: 'workspace', label: 'Workspace & Region', icon: Globe },
+              { id: 'billing', label: 'Plan & Billing', icon: CreditCard },
               { id: 'security', label: 'Security & Password', icon: Shield }
             ].map(item => {
               const Icon = item.icon;
@@ -139,7 +147,7 @@ export default function SettingsPage() {
         </div>
 
         {/* Tab Content Panels */}
-        <div className="surface" style={{ padding: 28, borderRadius: 'var(--radius-lg)' }}>
+        <div className="surface settings-panel" style={{ padding: 28, borderRadius: 'var(--radius-lg)' }}>
           {/* 1. Profile Tab */}
           {activeTab === 'profile' && (
             <form onSubmit={handleSaveProfile}>
@@ -406,7 +414,17 @@ export default function SettingsPage() {
             </div>
           )}
 
-          {/* 4. Security Tab */}
+          {activeTab === 'billing' && (
+            <div className="billing-settings">
+              <h2>Plan & Billing</h2>
+              <p>Your membership controls paid course access. Your account role ({account.role}) is managed separately by an administrator.</p>
+              <div className="billing-summary"><div><span>Current plan</span><strong>{billing.plan === 'pro' ? 'Pro membership' : 'Free'}</strong>{billing.subscription?.currentPeriodEnd && <small>{billing.subscription.cancelAtPeriodEnd ? 'Access ends' : 'Renews'} {new Date(billing.subscription.currentPeriodEnd).toLocaleDateString()}</small>}</div><span className="header-plan-chip">{billing.subscription?.status || 'active'}</span></div>
+              {billing.canManage ? <button className="btn btn-primary" onClick={()=>void openBillingPortal()}>Manage billing in Stripe</button> : <Link href="/pricing" className="btn btn-primary">Compare plans</Link>}
+              {!billing.configured && <p className="billing-setup-note">Checkout is currently disabled while the Stripe account is being connected.</p>}
+            </div>
+          )}
+
+          {/* 5. Security Tab */}
           {activeTab === 'security' && (
             <form onSubmit={handleSavePassword}>
               <h2 style={{ fontSize: '1.2rem', fontWeight: 800, marginBottom: 4 }}>Security & Password</h2>
@@ -474,6 +492,23 @@ export default function SettingsPage() {
                     }}
                   />
                 </div>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: 16, background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)', marginBottom: 16 }}>
+                <div>
+                  <div style={{ fontSize: '0.92rem', fontWeight: 700 }}>Email Verification</div>
+                  <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                    {account.emailVerified ? 'Your email address is verified.' : (verifyStatus || 'Your email address is not verified yet.')}
+                  </div>
+                </div>
+                {!account.emailVerified && (
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <Link href="/verify-email" className="btn btn-primary btn-sm">Enter code</Link>
+                    <button type="button" onClick={() => void handleResendVerification()} className="btn btn-secondary btn-sm">
+                      Resend code
+                    </button>
+                  </div>
+                )}
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: 16, background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)', marginBottom: 28 }}>
