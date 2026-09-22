@@ -29,6 +29,7 @@ Scheduled notification emails (live-class reminders and the weekly digest) need 
 - Course catalog, enrollment, bookmarks, per-account completion, last lesson, private notes, downloadable resources.
 - Instructor-owned course drafts, modules, lessons, publication, archive, and enrollment roster; administrators can assign ownership.
 - Course editor metadata for subtitle, language, promotional video, target audience, learning outcomes, requirements, and per-course certificate enablement; values are validated on the server.
+- Module and lesson order can be changed with drag handles or keyboard-friendly move buttons in the instructor editor; saving persists the order through existing position columns.
 - Assignment creation, text/link submissions, protected attachments (PDF/TXT/ZIP/PNG/JPEG, 10 MB, five per assignment), grading and feedback.
 - Completion certificates after all lessons and required assignments pass; unique issuance and authenticated verification.
 - Community posts, replies, unique helpful votes, administrator moderation.
