@@ -2,13 +2,14 @@ import { randomUUID, randomInt } from 'node:crypto';
 import { hashPassword, verifyPassword, newToken, digest, readSession, sessionCookie } from './auth.mjs';
 import { createConsoleMailer, verificationEmailHtml } from './mail.mjs';
 import { billingConfigured, createCheckout, createPortal, retrievePrice, verifyStripeEvent } from './billing.mjs';
+import { PERMISSIONS, ADMIN_PERMISSIONS, validPermission } from './permissions.mjs';
 const now=()=>new Date().toISOString();
 class HttpError extends Error {constructor(status,message){super(message);this.status=status}}
 const fail=(status,message)=>{throw new HttpError(status,message)};
 function text(value,label,max=200,optional=false){if(typeof value!=='string'||(!optional&&!value.trim())||value.length>max)fail(400,`${label} must be ${optional?'at most':'between 1 and'} ${max} characters.`);return value.trim()}
 function webUrl(value,label,optional=true){const v=text(value||'',label,2000,optional);if(!v)return '';try{if(new URL(v).protocol!=='https:')throw Error()}catch{fail(400,`${label} must be an HTTPS URL.`)}return v}
 async function readBody(request){if(!request.headers.get('content-type')?.includes('application/json'))fail(415,'Send a JSON request.');const reader=request.body?.getReader();if(!reader)return {};let size=0;const parts=[];for(;;){const {done,value}=await reader.read();if(done)break;size+=value.byteLength;if(size>524288){await reader.cancel();fail(413,'Request too large.')}parts.push(value)}let result;try{result=JSON.parse(Buffer.concat(parts).toString())}catch{fail(400,'Invalid JSON.')}if(!result||typeof result!=='object'||Array.isArray(result))fail(400,'Expected a JSON object.');return result}
-const publicUser=u=>({id:u.id,email:u.email,name:u.name,role:u.role,disabled:!!u.disabled,emailVerified:!!u.email_verified_at});
+const publicUser=u=>({id:u.id,email:u.email,name:u.name,role:u.role,permissions:u.permissions||[],disabled:!!u.disabled,emailVerified:!!u.email_verified_at});
 const USER_WITH_VERIFICATION="SELECT u.*, ev.verified_at AS email_verified_at FROM users u LEFT JOIN email_verifications ev ON ev.user_id=u.id";
 export function createService(db,seed=[],options={}) {
   const mailer=options.mail||createConsoleMailer();
@@ -95,10 +96,12 @@ export function createService(db,seed=[],options={}) {
     // password: the first administrator must always come through the /login setup-token flow.
   }
   let ready;
-  async function currentUser(request,required=true){const token=readSession(externalRequest(request));const user=token&&await get('SELECT u.*, ev.verified_at AS email_verified_at FROM users u JOIN sessions s ON u.id=s.user_id LEFT JOIN email_verifications ev ON ev.user_id=u.id WHERE s.token_hash=? AND s.expires_at>? AND u.disabled=0',digest(token),Date.now());if(!user&&required)fail(401,'Please sign in.');return user||null}
+  async function currentUser(request,required=true){const token=readSession(externalRequest(request));const user=token&&await get('SELECT u.*, ev.verified_at AS email_verified_at FROM users u JOIN sessions s ON u.id=s.user_id LEFT JOIN email_verifications ev ON ev.user_id=u.id WHERE s.token_hash=? AND s.expires_at>? AND u.disabled=0',digest(token),Date.now());if(!user&&required)fail(401,'Please sign in.');if(user){const assigned=await all('SELECT ura.role_id,rp.permission FROM user_role_assignments ura LEFT JOIN role_permissions rp ON rp.role_id=ura.role_id WHERE ura.user_id=?',user.id);user.permissions=user.role==='admin'?[...PERMISSIONS]:[...new Set([...(user.role==='instructor'?['view_dashboard','create_courses','edit_courses','manage_assignments','view_analytics']:[]),...(assigned.some(row=>row.role_id==='admin')?ADMIN_PERMISSIONS:[]),...assigned.map(row=>row.permission).filter(Boolean)])]}return user||null}
   async function limit(key,max){const stamp=Date.now();await run('INSERT INTO rate_limits(key,attempts,expires_at) VALUES(?,1,?) ON CONFLICT(key) DO UPDATE SET attempts=CASE WHEN expires_at<? THEN 1 ELSE attempts+1 END, expires_at=CASE WHEN expires_at<? THEN excluded.expires_at ELSE expires_at END',digest(key),stamp+900000,stamp,stamp);const value=await get('SELECT attempts FROM rate_limits WHERE key=?',digest(key));if(value.attempts>max)fail(429,'Too many attempts. Try again in 15 minutes.')}
-  function staff(user){if(!['admin','instructor'].includes(user.role))fail(403,'Instructor access required.')}
-  function admin(user){if(user.role!=='admin')fail(403,'Administrator access required.')}
+  function hasPermission(user,permission){return user.role==='admin'||user.permissions?.includes(permission)}
+  function requirePermission(user,permission){if(!hasPermission(user,permission))fail(403,'Permission required: '+permission)}
+  function staff(user){if(!hasPermission(user,'create_courses'))fail(403,'Instructor access required.')}
+  function admin(user){requirePermission(user,'manage_users')}
   async function owned(user,id){staff(user);const course=await get('SELECT * FROM courses WHERE id=?',id);if(!course)fail(404,'Course not found.');if(user.role!=='admin'&&course.owner_id!==user.id)fail(403,'This course belongs to another instructor.');return course}
   async function enrolled(user,id){const row=await get('SELECT e.*,c.metadata FROM enrollments e JOIN courses c ON e.course_id=c.id WHERE e.user_id=? AND e.course_id=? AND c.publication=?',user.id,id,'published');if(!row)fail(403,'Enroll in an available course to access its lessons.');if(JSON.parse(row.metadata).access==='pro'&&user.role==='learner'&&(await billingState(user)).plan!=='pro')fail(402,'This course requires an active Pro membership.');return row}
   async function lessonAccess(user,id){const lesson=await get('SELECT * FROM lessons WHERE id=?',id);if(!lesson)fail(404,'Lesson not found.');await enrolled(user,lesson.course_id);return lesson}
@@ -391,10 +394,37 @@ export function createService(db,seed=[],options={}) {
       }
       if(path[0]==='admin'){
         admin(user);
-        if(path[1]==='users'&&method==='GET')return reply(await Promise.all((await all(USER_WITH_VERIFICATION+' ORDER BY u.created_at DESC')).map(async person=>({...publicUser(person),billing:await billingState(person)}))));
+        if(path[1]==='roles'&&method==='GET'){
+          requirePermission(user,'manage_roles');
+          const roles=await all('SELECT * FROM role_definitions ORDER BY is_system DESC,name');
+          const granted=await all('SELECT role_id,permission FROM role_permissions');
+          return reply({permissions:PERMISSIONS,roles:roles.map(role=>({...role,permissions:role.id==='admin'&&!(granted.some(row=>row.role_id==='admin'))?ADMIN_PERMISSIONS:granted.filter(row=>row.role_id===role.id).map(row=>row.permission)}))});
+        }
+        if(path[1]==='roles'&&method==='POST'){
+          requirePermission(user,'manage_roles');
+          const name=text(body.name,'Role name',80);
+          if(!Array.isArray(body.permissions)||body.permissions.some(p=>!validPermission(p)||!hasPermission(user,p)))fail(400,'Choose only permissions you hold.');
+          const id=randomUUID();await db.batch([['INSERT INTO role_definitions(id,name,is_system,created_at) VALUES(?,?,0,?)',[id,name,now()]],...[...new Set(body.permissions)].map(p=>['INSERT INTO role_permissions(role_id,permission) VALUES(?,?)',[id,p]])]);
+          await audit(user,'role.create',id);return reply({id},201);
+        }
+        if(path[1]==='roles'&&path[2]&&method==='PATCH'){
+          requirePermission(user,'manage_roles');const role=await get('SELECT * FROM role_definitions WHERE id=?',path[2]);if(!role)fail(404,'Role not found.');if(role.is_system)fail(403,'System roles cannot be edited.');
+          if(!Array.isArray(body.permissions)||body.permissions.some(p=>!validPermission(p)||!hasPermission(user,p)))fail(400,'Choose only permissions you hold.');
+          const prior=await all('SELECT permission FROM role_permissions WHERE role_id=?',role.id);if(prior.some(row=>!hasPermission(user,row.permission)))fail(403,'You cannot edit a role with permissions you do not hold.');
+          await db.batch([['DELETE FROM role_permissions WHERE role_id=?',[role.id]],...[...new Set(body.permissions)].map(p=>['INSERT INTO role_permissions(role_id,permission) VALUES(?,?)',[role.id,p]])]);
+          await run('DELETE FROM sessions WHERE user_id IN (SELECT user_id FROM user_role_assignments WHERE role_id=?)',role.id);await audit(user,'role.update',role.id);return reply({ok:true});
+        }
+        if(path[1]==='users'&&path[2]&&path[3]==='roles'&&method==='PUT'){
+          requirePermission(user,'manage_roles');if(path[2]===user.id)fail(409,'You cannot change your own role assignments.');
+          const target=await get('SELECT id FROM users WHERE id=?',path[2]);if(!target)fail(404,'User not found.');
+          if(!Array.isArray(body.roleIds)||body.roleIds.some(id=>typeof id!=='string')||body.roleIds.length>20)fail(400,'Choose valid roles.');
+          const roleIds=[...new Set(body.roleIds)];for(const roleId of roleIds){const role=await get('SELECT id FROM role_definitions WHERE id=?',roleId);if(!role)fail(400,'Role not found.');const grants=roleId==='admin'?ADMIN_PERMISSIONS:(await all('SELECT permission FROM role_permissions WHERE role_id=?',roleId)).map(row=>row.permission);if(grants.some(p=>!hasPermission(user,p)))fail(403,'You cannot grant a permission you do not hold.');}
+          await db.batch([['DELETE FROM user_role_assignments WHERE user_id=?',[target.id]],...roleIds.map(id=>['INSERT INTO user_role_assignments(user_id,role_id) VALUES(?,?)',[target.id,id]]),['DELETE FROM sessions WHERE user_id=?',[target.id]]]);await audit(user,'user.roles',target.id);return reply({ok:true});
+        }
+        if(path[1]==='users'&&method==='GET')return reply(await Promise.all((await all(USER_WITH_VERIFICATION+' ORDER BY u.created_at DESC')).map(async person=>({...publicUser(person),roleIds:(await all('SELECT role_id FROM user_role_assignments WHERE user_id=?',person.id)).map(row=>row.role_id),billing:await billingState(person)}))));
         if(path[1]==='audit'&&method==='GET')return reply(await all('SELECT a.*,u.name FROM audit_log a JOIN users u ON u.id=a.actor_id ORDER BY a.created_at DESC LIMIT 200'));
         if(path[1]==='users'&&path[2]&&method==='PATCH'){
-          const target=await get('SELECT * FROM users WHERE id=?',path[2]);if(!target)fail(404,'User not found.');const role=body.role??target.role;const disabled=body.disabled===undefined?target.disabled:body.disabled===true?1:body.disabled===false?0:fail(400,'Invalid account status.');if(!['learner','instructor','admin'].includes(role))fail(400,'Invalid role.');
+          const target=await get('SELECT * FROM users WHERE id=?',path[2]);if(!target)fail(404,'User not found.');const role=body.role??target.role;const disabled=body.disabled===undefined?target.disabled:body.disabled===true?1:body.disabled===false?0:fail(400,'Invalid account status.');if(!['learner','instructor','admin'].includes(role))fail(400,'Invalid role.');if(user.role!=='admin'&&(body.role!==undefined||target.role==='admin'))fail(403,'Only the Super Admin can change system roles or administrator accounts.');
           if(target.id===user.id&&(disabled||role!=='admin'))fail(409,'You cannot remove your own administrator access.');
           await db.batch([['UPDATE users SET role=?,disabled=? WHERE id=?',[role,disabled,target.id]],['DELETE FROM sessions WHERE user_id=?',[target.id]]]);await audit(user,'user.update',target.id);return reply({ok:true});
         }

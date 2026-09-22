@@ -10,7 +10,7 @@ writeFileSync(join(stage,'next.config.mjs'),'export default {output:"export",tra
 execFileSync(process.execPath,[join(root,'node_modules/next/dist/bin/next'),'build','--webpack'],{cwd:stage,stdio:'inherit',env:{...process.env,NEXT_TELEMETRY_DISABLED:'1'}});
 const assets={};function walk(dir){for(const name of readdirSync(dir)){const path=join(dir,name);if(statSync(path).isDirectory())walk(path);else{const key='/'+relative(join(stage,'out'),path);assets[key]={body:readFileSync(path).toString('base64'),type:path.endsWith('.html')?'text/html':path.endsWith('.js')?'text/javascript':path.endsWith('.css')?'text/css':path.endsWith('.txt')?'text/plain':path.endsWith('.json')?'application/json':path.endsWith('.svg')?'image/svg+xml':'application/octet-stream'}}}}walk(join(stage,'out'));
 mkdirSync('dist/server',{recursive:true});
-for(const name of ['service.mjs','auth.mjs','billing.mjs','d1.mjs','mail.mjs'])cpSync(join('server',name),join('dist/server',name));
+for(const name of ['service.mjs','auth.mjs','billing.mjs','d1.mjs','mail.mjs','permissions.mjs'])cpSync(join('server',name),join('dist/server',name));
 const seedSource=stripTypeScriptTypes(readFileSync('lib/data.ts','utf8'),{mode:'strip'});writeFileSync('dist/server/seed.mjs',seedSource);
 const schema=readdirSync('db/migrations').filter(name=>name.endsWith('.sql')).sort().flatMap(name=>readFileSync(join('db/migrations',name),'utf8').split(';').map(s=>s.trim()).filter(Boolean));
 writeFileSync('dist/server/assets.mjs','export default '+JSON.stringify(assets)+';\n');

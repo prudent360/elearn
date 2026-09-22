@@ -34,6 +34,7 @@ Scheduled notification emails (live-class reminders and the weekly digest) need 
 - Live session scheduling with enrollment-gated meeting links.
 - Profile, saved preferences, weekly goals, completion-derived activity and estimated lesson durations.
 - Administrator role/access management and administrative audit events.
+- Custom roles with validated granular permissions, server-side permission checks, role assignment, and session invalidation after access changes. Existing administrator accounts are Super Admins; the built-in Admin role and custom roles can be assigned from Administration.
 - Stripe-hosted monthly/yearly Pro checkout, signed idempotent webhooks, entitlement-gated courses, and Stripe Customer Portal management. Payment never grants an instructor or administrator role.
 - Notification emails honoring each learner's saved preferences: assignment-graded alerts, community reply/upvote alerts, live-class reminders (~30 minutes ahead), and an opt-in weekly learning digest. The first two send immediately from the triggering request; the latter two need the external scheduler described above.
 

@@ -42,8 +42,8 @@ export function Sidebar({ onClose }: SidebarProps) {
     { href: '/live-classes', label: 'Live Classes', icon: CalendarDays },
     { href: '/assignments', label: 'Assignments', icon: ClipboardCheck },
     { section: 'Account & Studio', divided: true },
-    ...(account.role !== 'learner' ? [{ href: '/instructor', label: 'Instructor Studio', icon: Wrench }] : []),
-    ...(account.role === 'admin' ? [{ href: '/admin', label: 'Administration', icon: ShieldCheck }] : []),
+    ...(account.permissions?.includes('create_courses') ? [{ href: '/instructor', label: 'Instructor Studio', icon: Wrench }] : []),
+    ...(account.permissions?.includes('manage_users') ? [{ href: '/admin', label: 'Administration', icon: ShieldCheck }] : []),
     { href: '/pricing', label: billing.plan === 'pro' ? 'Pro membership' : 'Plans & billing', icon: CreditCard },
     { href: '/profile', label: 'Profile', icon: UserRound },
     { href: '/settings', label: 'Settings', icon: Settings }
