@@ -9,8 +9,8 @@ const fail=(status,message)=>{throw new HttpError(status,message)};
 function text(value,label,max=200,optional=false){if(typeof value!=='string'||(!optional&&!value.trim())||value.length>max)fail(400,`${label} must be ${optional?'at most':'between 1 and'} ${max} characters.`);return value.trim()}
 function webUrl(value,label,optional=true){const v=text(value||'',label,2000,optional);if(!v)return '';try{if(new URL(v).protocol!=='https:')throw Error()}catch{fail(400,`${label} must be an HTTPS URL.`)}return v}
 async function readBody(request){if(!request.headers.get('content-type')?.includes('application/json'))fail(415,'Send a JSON request.');const reader=request.body?.getReader();if(!reader)return {};let size=0;const parts=[];for(;;){const {done,value}=await reader.read();if(done)break;size+=value.byteLength;if(size>524288){await reader.cancel();fail(413,'Request too large.')}parts.push(value)}let result;try{result=JSON.parse(Buffer.concat(parts).toString())}catch{fail(400,'Invalid JSON.')}if(!result||typeof result!=='object'||Array.isArray(result))fail(400,'Expected a JSON object.');return result}
-const publicUser=u=>({id:u.id,email:u.email,name:u.name,role:u.role,permissions:u.permissions||[],disabled:!!u.disabled,emailVerified:!!u.email_verified_at});
-const USER_WITH_VERIFICATION="SELECT u.*, ev.verified_at AS email_verified_at FROM users u LEFT JOIN email_verifications ev ON ev.user_id=u.id";
+const publicUser=u=>({id:u.id,email:u.email,name:u.name,role:u.role,permissions:u.permissions||[],disabled:!!u.disabled,emailVerified:!!u.email_verified_at,instructorStatus:u.role==='instructor'?(u.instructor_status||'pending'):null});
+const USER_WITH_VERIFICATION="SELECT u.*, ev.verified_at AS email_verified_at, ia.status AS instructor_status FROM users u LEFT JOIN email_verifications ev ON ev.user_id=u.id LEFT JOIN instructor_approvals ia ON ia.user_id=u.id";
 export function createService(db,seed=[],options={}) {
   const mailer=options.mail||createConsoleMailer();
   const mailConfigured=mailer.configured!==false;
@@ -96,7 +96,7 @@ export function createService(db,seed=[],options={}) {
     // password: the first administrator must always come through the /login setup-token flow.
   }
   let ready;
-  async function currentUser(request,required=true){const token=readSession(externalRequest(request));const user=token&&await get('SELECT u.*, ev.verified_at AS email_verified_at FROM users u JOIN sessions s ON u.id=s.user_id LEFT JOIN email_verifications ev ON ev.user_id=u.id WHERE s.token_hash=? AND s.expires_at>? AND u.disabled=0',digest(token),Date.now());if(!user&&required)fail(401,'Please sign in.');if(user){const assigned=await all('SELECT ura.role_id,rp.permission FROM user_role_assignments ura LEFT JOIN role_permissions rp ON rp.role_id=ura.role_id WHERE ura.user_id=?',user.id);user.permissions=user.role==='admin'?[...PERMISSIONS]:[...new Set([...(user.role==='instructor'?['view_dashboard','create_courses','edit_courses','manage_assignments','view_analytics']:[]),...(assigned.some(row=>row.role_id==='admin')?ADMIN_PERMISSIONS:[]),...assigned.map(row=>row.permission).filter(Boolean)])]}return user||null}
+  async function currentUser(request,required=true){const token=readSession(externalRequest(request));const user=token&&await get('SELECT u.*, ev.verified_at AS email_verified_at, ia.status AS instructor_status FROM users u JOIN sessions s ON u.id=s.user_id LEFT JOIN email_verifications ev ON ev.user_id=u.id LEFT JOIN instructor_approvals ia ON ia.user_id=u.id WHERE s.token_hash=? AND s.expires_at>? AND u.disabled=0',digest(token),Date.now());if(!user&&required)fail(401,'Please sign in.');if(user){const assigned=await all('SELECT ura.role_id,rp.permission FROM user_role_assignments ura LEFT JOIN role_permissions rp ON rp.role_id=ura.role_id WHERE ura.user_id=?',user.id);user.permissions=user.role==='admin'?[...PERMISSIONS]:[...new Set([...(user.role==='instructor'&&user.instructor_status==='approved'?['view_dashboard','create_courses','edit_courses','manage_assignments','view_analytics']:[]),...(assigned.some(row=>row.role_id==='admin')?ADMIN_PERMISSIONS:[]),...assigned.map(row=>row.permission).filter(Boolean)])]}return user||null}
   async function limit(key,max){const stamp=Date.now();await run('INSERT INTO rate_limits(key,attempts,expires_at) VALUES(?,1,?) ON CONFLICT(key) DO UPDATE SET attempts=CASE WHEN expires_at<? THEN 1 ELSE attempts+1 END, expires_at=CASE WHEN expires_at<? THEN excluded.expires_at ELSE expires_at END',digest(key),stamp+900000,stamp,stamp);const value=await get('SELECT attempts FROM rate_limits WHERE key=?',digest(key));if(value.attempts>max)fail(429,'Too many attempts. Try again in 15 minutes.')}
   function hasPermission(user,permission){return user.role==='admin'||user.permissions?.includes(permission)}
   function requirePermission(user,permission){if(!hasPermission(user,permission))fail(403,'Permission required: '+permission)}
@@ -394,6 +394,13 @@ export function createService(db,seed=[],options={}) {
       }
       if(path[0]==='admin'){
         admin(user);
+        if(path[1]==='overview'&&method==='GET'){
+          const people=await get("SELECT SUM(CASE WHEN role='learner' AND disabled=0 THEN 1 ELSE 0 END) AS students,SUM(CASE WHEN role='instructor' AND disabled=0 THEN 1 ELSE 0 END) AS instructors FROM users");
+          const courses=await get("SELECT COUNT(*) AS total,SUM(CASE WHEN publication='published' THEN 1 ELSE 0 END) AS active FROM courses");
+          const enrollments=await get('SELECT COUNT(*) AS total FROM enrollments');
+          const recent=await all('SELECT e.created_at,u.name AS student_name,c.metadata AS course_metadata FROM enrollments e JOIN users u ON u.id=e.user_id JOIN courses c ON c.id=e.course_id ORDER BY e.created_at DESC LIMIT 8');
+          return reply({students:people.students||0,instructors:people.instructors||0,courses:courses.total||0,activeCourses:courses.active||0,enrollments:enrollments.total,recentEnrollments:recent.map(row=>({student:row.student_name,course:JSON.parse(row.course_metadata).title,createdAt:row.created_at}))});
+        }
         if(path[1]==='roles'&&method==='GET'){
           requirePermission(user,'manage_roles');
           const roles=await all('SELECT * FROM role_definitions ORDER BY is_system DESC,name');
@@ -421,12 +428,44 @@ export function createService(db,seed=[],options={}) {
           const roleIds=[...new Set(body.roleIds)];for(const roleId of roleIds){const role=await get('SELECT id FROM role_definitions WHERE id=?',roleId);if(!role)fail(400,'Role not found.');const grants=roleId==='admin'?ADMIN_PERMISSIONS:(await all('SELECT permission FROM role_permissions WHERE role_id=?',roleId)).map(row=>row.permission);if(grants.some(p=>!hasPermission(user,p)))fail(403,'You cannot grant a permission you do not hold.');}
           await db.batch([['DELETE FROM user_role_assignments WHERE user_id=?',[target.id]],...roleIds.map(id=>['INSERT INTO user_role_assignments(user_id,role_id) VALUES(?,?)',[target.id,id]]),['DELETE FROM sessions WHERE user_id=?',[target.id]]]);await audit(user,'user.roles',target.id);return reply({ok:true});
         }
-        if(path[1]==='users'&&method==='GET')return reply(await Promise.all((await all(USER_WITH_VERIFICATION+' ORDER BY u.created_at DESC')).map(async person=>({...publicUser(person),roleIds:(await all('SELECT role_id FROM user_role_assignments WHERE user_id=?',person.id)).map(row=>row.role_id),billing:await billingState(person)}))));
+        if(path[1]==='users'&&!path[2]&&method==='GET')return reply(await Promise.all((await all(USER_WITH_VERIFICATION+' ORDER BY u.created_at DESC')).map(async person=>({...publicUser(person),roleIds:(await all('SELECT role_id FROM user_role_assignments WHERE user_id=?',person.id)).map(row=>row.role_id),billing:await billingState(person)}))));
         if(path[1]==='audit'&&method==='GET')return reply(await all('SELECT a.*,u.name FROM audit_log a JOIN users u ON u.id=a.actor_id ORDER BY a.created_at DESC LIMIT 200'));
-        if(path[1]==='users'&&path[2]&&method==='PATCH'){
+        if(path[1]==='users'&&path[2]&&!path[3]&&method==='PATCH'){
           const target=await get('SELECT * FROM users WHERE id=?',path[2]);if(!target)fail(404,'User not found.');const role=body.role??target.role;const disabled=body.disabled===undefined?target.disabled:body.disabled===true?1:body.disabled===false?0:fail(400,'Invalid account status.');if(!['learner','instructor','admin'].includes(role))fail(400,'Invalid role.');if(user.role!=='admin'&&(body.role!==undefined||target.role==='admin'))fail(403,'Only the Super Admin can change system roles or administrator accounts.');
           if(target.id===user.id&&(disabled||role!=='admin'))fail(409,'You cannot remove your own administrator access.');
-          await db.batch([['UPDATE users SET role=?,disabled=? WHERE id=?',[role,disabled,target.id]],['DELETE FROM sessions WHERE user_id=?',[target.id]]]);await audit(user,'user.update',target.id);return reply({ok:true});
+          const statements=[['UPDATE users SET role=?,disabled=? WHERE id=?',[role,disabled,target.id]],['DELETE FROM sessions WHERE user_id=?',[target.id]]];
+          // A fresh promotion to instructor starts pending until someone with manage_instructors
+          // reviews it; INSERT OR IGNORE means re-promoting someone who already has a row (e.g. a
+          // demoted-then-restored instructor) leaves their prior status alone instead of resetting it.
+          if(role==='instructor'&&target.role!=='instructor')statements.push(['INSERT OR IGNORE INTO instructor_approvals(user_id,status,created_at) VALUES(?,?,?)',[target.id,'pending',now()]]);
+          await db.batch(statements);await audit(user,'user.update',target.id);return reply({ok:true});
+        }
+        if(path[1]==='users'&&path[2]&&path[3]==='instructor-approval'&&method==='PATCH'){
+          requirePermission(user,'manage_instructors');
+          const target=await get('SELECT * FROM users WHERE id=?',path[2]);if(!target)fail(404,'User not found.');if(target.role!=='instructor')fail(409,'This account is not an instructor.');
+          if(!['approved','rejected'].includes(body.status))fail(400,'Status must be approved or rejected.');
+          await db.batch([['INSERT INTO instructor_approvals(user_id,status,reviewed_by,reviewed_at,created_at) VALUES(?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET status=excluded.status,reviewed_by=excluded.reviewed_by,reviewed_at=excluded.reviewed_at',[target.id,body.status,user.id,now(),now()]],['DELETE FROM sessions WHERE user_id=?',[target.id]]]);
+          await audit(user,'instructor.'+body.status,target.id);return reply({ok:true});
+        }
+        if(path[1]==='enrollments'&&method==='POST'){
+          requirePermission(user,'manage_students');
+          const target=await get('SELECT id FROM users WHERE id=?',body.userId);if(!target)fail(404,'User not found.');
+          const course=await get("SELECT * FROM courses WHERE id=? AND publication='published'",body.courseId);if(!course)fail(404,'Course not found.');
+          if(!(await get('SELECT id FROM lessons WHERE course_id=? LIMIT 1',course.id)))fail(409,'This course has no lessons yet.');
+          await run('INSERT OR IGNORE INTO enrollments VALUES(?,?,?)',target.id,course.id,now());
+          await audit(user,'enrollment.manual',target.id+':'+course.id);return reply({ok:true},201);
+        }
+        if(path[1]==='users'&&path[2]&&path[3]==='progress'&&method==='GET'){
+          requirePermission(user,'manage_students');
+          const target=await get('SELECT id,name,email FROM users WHERE id=?',path[2]);if(!target)fail(404,'User not found.');
+          const enrollments=await all('SELECT e.course_id,e.created_at AS enrolled_at,c.metadata FROM enrollments e JOIN courses c ON c.id=e.course_id WHERE e.user_id=? ORDER BY e.created_at DESC',target.id);
+          const detail=await Promise.all(enrollments.map(async row=>{
+            const total=(await get('SELECT COUNT(*) AS n FROM lessons WHERE course_id=?',row.course_id)).n;
+            const completed=(await get('SELECT COUNT(*) AS n FROM progress p JOIN lessons l ON l.id=p.lesson_id WHERE l.course_id=? AND p.user_id=? AND p.completed_at IS NOT NULL',row.course_id,target.id)).n;
+            const lastSeen=(await get('SELECT MAX(last_seen) AS at FROM progress p JOIN lessons l ON l.id=p.lesson_id WHERE l.course_id=? AND p.user_id=?',row.course_id,target.id)).at;
+            return {courseId:row.course_id,courseTitle:JSON.parse(row.metadata).title,enrolledAt:row.enrolled_at,totalLessons:total,completedLessons:completed,progress:total?Math.round(completed/total*100):0,lastActivity:lastSeen};
+          }));
+          return reply({user:target,enrollments:detail});
         }
       }
       fail(404,'Endpoint not found.');

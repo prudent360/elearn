@@ -1,5 +1,9 @@
 # LMS implementation plan
 
+## Status
+
+Phase 1 (access foundation) and the first slice of phase 2 (admin and people) are done: role/permission tables and enforcement, a role editor, an instructor approval workflow gating course-creation access, searchable/filterable accounts, manual enrollment, per-learner progress detail, and admin-triggered (email-based, single-use) password resets. Remaining phase 2 work — instructor-side metrics/roster/announcements belong to phase 3 — is otherwise open. Phases 3-7 are not started.
+
 ## Current foundation
 
 The app uses Next.js 16/React 19, a shared server-side API service, SQLite locally and D1/R2 on Sites. Email/password sessions, CSRF origin checks, rate limits, three fixed roles, course drafts and publication, assignments, completion certificates, basic audit events, Stripe Pro subscriptions, and learner pages already exist. The admin and instructor pages should be extended in place. The current Sites deployment is owner-private; that gate blocks external payment webhooks and scheduled notification calls.

@@ -4,7 +4,7 @@ import {initialData,CurrentUser,CommunityThread} from '@/lib/data';
 import {AuthScreen} from '@/components/auth/AuthScreen';
 export interface NotificationSettings {emailDigest:boolean;assignmentGraded:boolean;liveClassReminders:boolean;communityReplies:boolean}
 export interface WorkspaceSettings {timezone:string;language:string;density:'comfortable'|'compact'}
-interface Account {id:string;name:string;email:string;role:'learner'|'instructor'|'admin';permissions:string[];emailVerified:boolean}
+interface Account {id:string;name:string;email:string;role:'learner'|'instructor'|'admin';permissions:string[];emailVerified:boolean;instructorStatus:'pending'|'approved'|'rejected'|null}
 export interface BillingState {configured:boolean;plan:'free'|'pro';subscription:null|{status:string;planKey:'pro-monthly'|'pro-yearly';currentPeriodEnd:string|null;cancelAtPeriodEnd:boolean};canManage:boolean}
 interface LearningContextType {
  data:typeof initialData; theme:'dark'|'light';toggleTheme:()=>void;savedCourses:string[];enrolledCourses:string[];
