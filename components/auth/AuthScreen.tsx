@@ -2,6 +2,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { Eye, EyeOff } from 'lucide-react';
 
 interface AuthScreenProps {
   setupRequired: boolean;
@@ -14,6 +15,7 @@ export function AuthScreen({ setupRequired, mailConfigured, onSignedIn }: AuthSc
   const [mode, setMode] = useState<'login' | 'register' | 'setup'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [name, setName] = useState('');
   const [setupToken, setSetupToken] = useState('');
   const [busy, setBusy] = useState(false);
@@ -196,17 +198,22 @@ export function AuthScreen({ setupRequired, mailConfigured, onSignedIn }: AuthSc
                   </Link>
                 )}
               </div>
-              <input
-                id="auth-password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder={mode === 'login' ? '••••••••' : 'Min. 12 characters'}
-                required
-                minLength={mode === 'login' ? 1 : 12}
-                maxLength={128}
-                autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
-              />
+              <div className="password-input-wrap">
+                <input
+                  id="auth-password"
+                  type={showPassword ? 'text' : 'password'}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder={mode === 'login' ? '••••••••' : 'Min. 12 characters'}
+                  required
+                  minLength={mode === 'login' ? 1 : 12}
+                  maxLength={128}
+                  autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
+                />
+                <button type="button" className="password-visibility" onClick={() => setShowPassword(value => !value)} aria-label={showPassword ? 'Hide password' : 'Show password'} aria-pressed={showPassword}>
+                  {showPassword ? <EyeOff aria-hidden="true" /> : <Eye aria-hidden="true" />}
+                </button>
+              </div>
             </div>
 
             {mode === 'setup' && (
