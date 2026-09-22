@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { ShieldCheck, UserCog, UsersRound } from 'lucide-react';
+import { ChevronDown, Eye, Pencil, Search, ShieldCheck, Trash2, UserCog, UsersRound } from 'lucide-react';
 import { useLearning } from '@/context/LearningContext';
 
 export default function Administration() {
@@ -16,6 +16,8 @@ export default function Administration() {
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [sort, setSort] = useState('newest');
+  const [editing, setEditing] = useState<any>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [progress, setProgress] = useState<Record<string, any>>({});
   const [error, setError] = useState('');
@@ -32,34 +34,40 @@ export default function Administration() {
   async function toggleDetail(id:string){const next=expanded===id?null:id;setExpanded(next);if(next&&!progress[next])await loadProgress(next)}
   async function manualEnroll(id:string,courseId:string){if(!courseId)return;setBusy(true);setError('');setNotice('');try{await api('admin/enrollments','POST',{userId:id,courseId});await loadProgress(id);setNotice('Learner enrolled.')}catch(issue){setError(String(issue))}finally{setBusy(false)}}
   async function sendReset(email:string){setBusy(true);setError('');setNotice('');try{await api('auth/reset-request','POST',{email});setNotice(`Password reset email sent to ${email} if that account exists.`)}catch(issue){setError(String(issue))}finally{setBusy(false)}}
+  async function saveUser(event:React.FormEvent){event.preventDefault();if(!editing)return;setBusy(true);setError('');setNotice('');try{await api(`admin/users/${editing.id}`,'PATCH',{name:editing.name,email:editing.email,role:editing.role});setEditing(null);await load();setNotice('User information updated. The user must sign in again.')}catch(issue){setError(String(issue))}finally{setBusy(false)}}
+  async function deleteUser(user:any){if(!window.confirm(`Delete ${user.name}? This is only allowed when the account has no activity.`))return;setBusy(true);setError('');setNotice('');try{await api(`admin/users/${user.id}`,'DELETE');await load();setNotice('Unused account deleted.')}catch(issue){setError(String(issue))}finally{setBusy(false)}}
 
   if (!account.permissions.includes('manage_users')) return <section className="surface backend-panel"><h1>Administrator access required</h1></section>;
   const pendingInstructors = users.filter(user => user.role==='instructor' && user.instructorStatus==='pending').length;
-  const visible=users.filter(user=>(roleFilter==='all'||user.role===roleFilter)&&(statusFilter==='all'||(statusFilter==='active'?!user.disabled:user.disabled))&&(user.name+' '+user.email).toLowerCase().includes(search.toLowerCase()));
+  const visible=users.filter(user=>(roleFilter==='all'||user.role===roleFilter)&&(statusFilter==='all'||(statusFilter==='active'?!user.disabled:user.disabled))&&(user.name+' '+user.email).toLowerCase().includes(search.toLowerCase())).sort((a,b)=>sort==='name'?a.name.localeCompare(b.name):sort==='oldest'?Date.parse(a.createdAt)-Date.parse(b.createdAt):Date.parse(b.createdAt)-Date.parse(a.createdAt));
   const canManageInstructors=account.permissions.includes('manage_instructors');
   const canManageStudents=account.permissions.includes('manage_students');
   const enrollableCourses=data.courses||[];
 
   return <div>
-    <div className="page-header"><div><p className="library-eyebrow">ACCESS & GOVERNANCE</p><h1 className="page-title">Administration</h1><p className="page-subtitle">Control who can teach and administer the academy. Billing plans never change security roles.</p></div></div>
+    <div className="page-header"><div><p className="library-eyebrow">ACCESS & GOVERNANCE</p><h1 className="page-title">Users</h1><p className="page-subtitle">Manage registered users, access, enrollment and account status.</p></div></div>
     {error && <p role="alert" className="backend-error">{error}</p>}
     {notice && <p role="status">{notice}</p>}
     {overview&&<><div className="admin-metrics"><article className="surface"><UsersRound/><div><strong>{overview.students}</strong><span>students</span></div></article><article className="surface"><UserCog/><div><strong>{overview.instructors}</strong><span>instructors</span></div></article><article className="surface"><ShieldCheck/><div><strong>{overview.activeCourses} / {overview.courses}</strong><span>published / total courses</span></div></article><article className="surface"><UsersRound/><div><strong>{overview.enrollments}</strong><span>enrollments</span></div></article>{canManageInstructors&&<article className="surface"><UserCog/><div><strong>{pendingInstructors}</strong><span>pending instructor review</span></div></article>}</div><section className="surface backend-panel"><h2>Recent enrollments</h2>{overview.recentEnrollments.length?overview.recentEnrollments.map((item:any,index:number)=><div className="backend-row" key={index}><span><strong>{item.student}</strong> · {item.course}</span><time>{new Date(item.createdAt).toLocaleDateString()}</time></div>):<p>No enrollments yet.</p>}</section></>}
-    <div className="backend-search">
-      <label>Search users<input type="search" value={search} onChange={event=>setSearch(event.target.value)} placeholder="Name or email" /></label>
-      <label>Role<select value={roleFilter} onChange={event=>setRoleFilter(event.target.value)}><option value="all">All roles</option><option value="learner">Learner</option><option value="instructor">Instructor</option><option value="admin">Admin</option></select></label>
-      <label>Status<select value={statusFilter} onChange={event=>setStatusFilter(event.target.value)}><option value="all">All accounts</option><option value="active">Active</option><option value="disabled">Disabled</option></select></label>
-    </div>
-    <section className="surface backend-panel">
-      <div className="section-heading"><div><h2>People and access</h2><p>Assign system roles and additional permissions to each account.</p></div></div>
+    <section className="surface admin-user-filters">
+      <label className="admin-search"><Search aria-hidden="true"/><span className="sr-only">Search users</span><input type="search" value={search} onChange={event=>setSearch(event.target.value)} placeholder="Search users by name or email…" /></label>
+      <label><span className="sr-only">Sort users</span><select value={sort} onChange={event=>setSort(event.target.value)}><option value="newest">Newest joined</option><option value="oldest">Oldest joined</option><option value="name">Name A–Z</option></select><ChevronDown aria-hidden="true"/></label>
+      <label><span>Role</span><select value={roleFilter} onChange={event=>setRoleFilter(event.target.value)}><option value="all">All roles</option><option value="learner">Student</option><option value="instructor">Instructor</option><option value="admin">Admin</option></select></label>
+      <label><span>Status</span><select value={statusFilter} onChange={event=>setStatusFilter(event.target.value)}><option value="all">All accounts</option><option value="active">Active</option><option value="disabled">Deactivated</option></select></label>
+      <button className="btn btn-secondary" type="button" onClick={()=>{setSearch('');setRoleFilter('all');setStatusFilter('all');setSort('newest')}}>Clear all</button>
+    </section>
+    <section className="surface admin-users-card">
+      <div className="section-heading"><div><h2>Registered users</h2><p>{visible.length} of {users.length} accounts</p></div></div>
       <div className="admin-table">
-        <div className="admin-table-head"><span>Person</span><span>Membership</span><span>Role</span><span>Account</span></div>
+        <div className="admin-table-head"><span>User</span><span>Contact</span><span>Joined</span><span>Role</span><span>Status</span><span>Actions</span></div>
         {visible.map(user => <div key={user.id}>
           <div className="admin-user-row">
-            <div><span className="sidebar-avatar">{user.name.slice(0,1).toUpperCase()}</span><span><strong>{user.name}</strong><small>{user.email}</small></span></div>
-            <span className="admin-plan">{user.billing?.plan || 'free'}</span>
-            <label><span className="sr-only">Role for {user.name}</span><select value={user.role} disabled={busy || account.role!=='admin' || user.id === account.id} onChange={event => void update(user.id, { role: event.target.value })}>{['learner','instructor','admin'].map(role => <option key={role}>{role}</option>)}</select></label>
-            <button className="btn btn-secondary" disabled={busy || user.id === account.id} onClick={() => void update(user.id, { disabled: !user.disabled })}>{user.disabled ? 'Enable' : 'Disable'}</button>
+            <div className="admin-user-identity"><span className="sidebar-avatar">{user.name.slice(0,1).toUpperCase()}</span><span><strong>{user.name}</strong><small>{user.role==='learner'?'student':user.role}</small></span></div>
+            <div className="admin-user-contact"><span>{user.email}</span><small>{user.emailVerified?'Email verified':'Email not verified'}</small></div>
+            <time>{user.createdAt?new Date(user.createdAt).toLocaleDateString(undefined,{day:'numeric',month:'short',year:'numeric'}):'—'}</time>
+            <span className="admin-plan">{user.role==='learner'?'Student':user.role}</span>
+            <span className={`admin-status ${user.disabled?'is-disabled':'is-active'}`}>{user.disabled?'Deactivated':'Active'}</span>
+            <div className="admin-actions"><button type="button" title="Edit user" aria-label={`Edit ${user.name}`} disabled={busy} onClick={()=>setEditing({...user})}><Pencil/></button>{canManageStudents&&<button type="button" title="View enrollment and progress" aria-label={`View ${user.name} enrollment and progress`} disabled={busy} onClick={()=>void toggleDetail(user.id)}><Eye/></button>}<button type="button" className={user.disabled?'':'danger'} disabled={busy||user.id===account.id} onClick={()=>void update(user.id,{disabled:!user.disabled})}>{user.disabled?'Activate':'Deactivate'}</button><button type="button" className="danger-icon" title="Delete unused account" aria-label={`Delete ${user.name}`} disabled={busy||user.id===account.id} onClick={()=>void deleteUser(user)}><Trash2/></button></div>
             {account.permissions.includes('manage_roles') && user.id!==account.id && <div className="role-assignment">{roles.map(role=><label key={role.id}><input type="checkbox" checked={user.roleIds?.includes(role.id)||false} disabled={busy} onChange={event=>void assignRole(user.id,role.id,event.target.checked)}/>{role.name}</label>)}</div>}
             {user.role==='instructor' && <div className="role-assignment admin-instructor-status">
               <span className={`instructor-badge instructor-badge-${user.instructorStatus||'pending'}`}>Instructor application: {user.instructorStatus||'pending'}</span>
@@ -86,5 +94,6 @@ export default function Administration() {
     </section>
     {account.permissions.includes('manage_roles')&&<section className="surface backend-panel"><h2>Roles &amp; permissions</h2><p>Create a role and choose exactly what it can access.</p><form onSubmit={event=>void createRole(event)}><label>Role name<input required maxLength={80} value={newRoleName} onChange={event=>setNewRoleName(event.target.value)}/></label><div className="role-permissions">{permissionOptions.filter(permission=>account.permissions.includes(permission)).map(permission=><label key={permission}><input type="checkbox" checked={selectedPermissions.includes(permission)} onChange={event=>setSelectedPermissions(current=>event.target.checked?[...current,permission]:current.filter(value=>value!==permission))}/>{permission.replaceAll('_',' ')}</label>)}</div><button className="btn btn-primary" disabled={busy}>Create role</button></form><div className="role-list">{roles.map(role=><div key={role.id}><strong>{role.name}</strong><small>{role.permissions.map((permission:string)=>permission.replaceAll('_',' ')).join(', ')||'No permissions'}</small></div>)}</div></section>}
     <section className="surface backend-panel"><h2>Recent access changes</h2>{audit.length === 0 && <p>No administrative changes yet.</p>}{audit.map(event => <div className="backend-row" key={event.id}><span><strong>{event.name}</strong> · {event.action}</span><time>{new Date(event.created_at).toLocaleString()}</time></div>)}</section>
+    {editing&&<div className="admin-modal-backdrop" role="presentation" onMouseDown={event=>{if(event.target===event.currentTarget)setEditing(null)}}><section className="surface admin-edit-dialog" role="dialog" aria-modal="true" aria-labelledby="edit-user-title"><div className="section-heading"><div><p className="library-eyebrow">USER ACCOUNT</p><h2 id="edit-user-title">Edit user</h2></div><button type="button" className="btn btn-secondary" onClick={()=>setEditing(null)}>Close</button></div><form className="backend-form" onSubmit={event=>void saveUser(event)}><label>Full name<input required maxLength={100} value={editing.name} onChange={event=>setEditing({...editing,name:event.target.value})}/></label><label>Email address<input required type="email" maxLength={254} value={editing.email} onChange={event=>setEditing({...editing,email:event.target.value})}/></label><label>System role<select value={editing.role} disabled={account.role!=='admin'||editing.id===account.id} onChange={event=>setEditing({...editing,role:event.target.value})}><option value="learner">Student</option><option value="instructor">Instructor</option><option value="admin">Admin</option></select></label><p className="page-subtitle">Changing the email or role signs this user out on every device.</p><div className="backend-actions"><button className="btn btn-primary" disabled={busy}>{busy?'Saving…':'Save changes'}</button><button type="button" className="btn btn-secondary" onClick={()=>setEditing(null)}>Cancel</button></div></form></section></div>}
   </div>;
 }

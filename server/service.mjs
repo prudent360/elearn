@@ -9,7 +9,7 @@ const fail=(status,message)=>{throw new HttpError(status,message)};
 function text(value,label,max=200,optional=false){if(typeof value!=='string'||(!optional&&!value.trim())||value.length>max)fail(400,`${label} must be ${optional?'at most':'between 1 and'} ${max} characters.`);return value.trim()}
 function webUrl(value,label,optional=true){const v=text(value||'',label,2000,optional);if(!v)return '';try{if(new URL(v).protocol!=='https:')throw Error()}catch{fail(400,`${label} must be an HTTPS URL.`)}return v}
 async function readBody(request){if(!request.headers.get('content-type')?.includes('application/json'))fail(415,'Send a JSON request.');const reader=request.body?.getReader();if(!reader)return {};let size=0;const parts=[];for(;;){const {done,value}=await reader.read();if(done)break;size+=value.byteLength;if(size>524288){await reader.cancel();fail(413,'Request too large.')}parts.push(value)}let result;try{result=JSON.parse(Buffer.concat(parts).toString())}catch{fail(400,'Invalid JSON.')}if(!result||typeof result!=='object'||Array.isArray(result))fail(400,'Expected a JSON object.');return result}
-const publicUser=u=>({id:u.id,email:u.email,name:u.name,role:u.role,permissions:u.permissions||[],disabled:!!u.disabled,emailVerified:!!u.email_verified_at,instructorStatus:u.role==='instructor'?(u.instructor_status||'pending'):null});
+const publicUser=u=>({id:u.id,email:u.email,name:u.name,role:u.role,permissions:u.permissions||[],disabled:!!u.disabled,emailVerified:!!u.email_verified_at,instructorStatus:u.role==='instructor'?(u.instructor_status||'pending'):null,createdAt:u.created_at});
 const USER_WITH_VERIFICATION="SELECT u.*, ev.verified_at AS email_verified_at, ia.status AS instructor_status FROM users u LEFT JOIN email_verifications ev ON ev.user_id=u.id LEFT JOIN instructor_approvals ia ON ia.user_id=u.id";
 export function createService(db,seed=[],options={}) {
   const mailer=options.mail||createConsoleMailer();
@@ -436,13 +436,20 @@ export function createService(db,seed=[],options={}) {
         if(path[1]==='audit'&&method==='GET')return reply(await all('SELECT a.*,u.name FROM audit_log a JOIN users u ON u.id=a.actor_id ORDER BY a.created_at DESC LIMIT 200'));
         if(path[1]==='users'&&path[2]&&!path[3]&&method==='PATCH'){
           const target=await get('SELECT * FROM users WHERE id=?',path[2]);if(!target)fail(404,'User not found.');const role=body.role??target.role;const disabled=body.disabled===undefined?target.disabled:body.disabled===true?1:body.disabled===false?0:fail(400,'Invalid account status.');if(!['learner','instructor','admin'].includes(role))fail(400,'Invalid role.');if(user.role!=='admin'&&(body.role!==undefined||target.role==='admin'))fail(403,'Only the Super Admin can change system roles or administrator accounts.');
+          const name=body.name===undefined?target.name:text(body.name,'Name',100);const email=body.email===undefined?target.email:text(body.email,'Email',254).toLowerCase();if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))fail(400,'Enter a valid email.');
           if(target.id===user.id&&(disabled||role!=='admin'))fail(409,'You cannot remove your own administrator access.');
-          const statements=[['UPDATE users SET role=?,disabled=? WHERE id=?',[role,disabled,target.id]],['DELETE FROM sessions WHERE user_id=?',[target.id]]];
+          const statements=[['UPDATE users SET name=?,email=?,role=?,disabled=? WHERE id=?',[name,email,role,disabled,target.id]],['DELETE FROM sessions WHERE user_id=?',[target.id]]];
           // A fresh promotion to instructor starts pending until someone with manage_instructors
           // reviews it; INSERT OR IGNORE means re-promoting someone who already has a row (e.g. a
           // demoted-then-restored instructor) leaves their prior status alone instead of resetting it.
           if(role==='instructor'&&target.role!=='instructor')statements.push(['INSERT OR IGNORE INTO instructor_approvals(user_id,status,created_at) VALUES(?,?,?)',[target.id,'pending',now()]]);
           await db.batch(statements);await audit(user,'user.update',target.id);return reply({ok:true});
+        }
+        if(path[1]==='users'&&path[2]&&!path[3]&&method==='DELETE'){
+          const target=await get('SELECT * FROM users WHERE id=?',path[2]);if(!target)fail(404,'User not found.');if(target.id===user.id)fail(409,'You cannot delete your own account.');if(target.role==='admin')fail(409,'Administrator accounts must be reassigned before deletion.');
+          const activity=await get("SELECT (SELECT COUNT(*) FROM enrollments WHERE user_id=?)+(SELECT COUNT(*) FROM progress WHERE user_id=?)+(SELECT COUNT(*) FROM notes WHERE user_id=?)+(SELECT COUNT(*) FROM submissions WHERE user_id=?)+(SELECT COUNT(*) FROM certificates WHERE user_id=?)+(SELECT COUNT(*) FROM billing_customers WHERE user_id=?)+(SELECT COUNT(*) FROM subscriptions WHERE user_id=?)+(SELECT COUNT(*) FROM threads WHERE author_id=?)+(SELECT COUNT(*) FROM replies WHERE author_id=?)+(SELECT COUNT(*) FROM live_classes WHERE host_id=?)+(SELECT COUNT(*) FROM courses WHERE owner_id=?) AS n",target.id,target.id,target.id,target.id,target.id,target.id,target.id,target.id,target.id,target.id,target.id);
+          if(activity.n)fail(409,'This account has learning, teaching, community, or billing history. Deactivate it to preserve records.');
+          await db.batch([['DELETE FROM audit_log WHERE actor_id=?',[target.id]],['DELETE FROM users WHERE id=?',[target.id]]]);await audit(user,'user.delete',target.id);return reply({ok:true});
         }
         if(path[1]==='users'&&path[2]&&path[3]==='instructor-approval'&&method==='PATCH'){
           requirePermission(user,'manage_instructors');
