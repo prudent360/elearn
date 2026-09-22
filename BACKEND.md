@@ -14,6 +14,8 @@ Outgoing email (account verification, password reset) sends through [Resend](htt
 
 ## Hosting
 
+For deployment from your own Cloudflare account without the Codex Sites access gate, follow [CLOUDFLARE.md](CLOUDFLARE.md). The former `.openai/hosting.json` project binding has been removed from this repository; the older private Sites deployment remains separate until cutover.
+
 `npm run build` builds the native Next server. `npm run build:sites` exports the client pages in an isolated temporary directory and packages the same API service as a Worker. The local API route uses SQLite; the Worker uses prepared D1 statements and R2 objects. Static export does not remove authentication or authorization: every `/api/*` route authenticates and authorizes its request on the server. `/course?id=...` supports newly created courses without rebuilding; old `/course/:id` links redirect on the hosted Worker.
 
 Sites bindings: `DB` (D1) and `FILES` (R2). Runtime values: `LMS_SETUP_TOKEN` (secret), `LMS_ORIGIN` (exact HTTPS origin), and optionally `LMS_EMAIL_API_KEY` (secret) and `LMS_EMAIL_FROM` for outgoing email. Payments use `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_PRO_MONTHLY`, `STRIPE_PRICE_PRO_YEARLY`, and optional `STRIPE_PORTAL_CONFIGURATION_ID`. Configure these through Sites environment settings. The Stripe webhook URL is `/api/billing/webhook`. The setup and Stripe credentials are never part of frontend assets. Existing Sites audience settings remain private; app email/password accounts are separate from that hosting gate. Making the academy available without the private hosting gate is a separate audience change.

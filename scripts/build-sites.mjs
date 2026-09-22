@@ -16,4 +16,4 @@ const schema=readdirSync('db/migrations').filter(name=>name.endsWith('.sql')).so
 writeFileSync('dist/server/assets.mjs','export default '+JSON.stringify(assets)+';\n');
 writeFileSync('dist/server/schema.mjs','export default '+JSON.stringify(schema)+';\n');
 cpSync('server/worker.mjs','dist/server/index.js');
-console.log('Built Next frontend + persistent D1 backend for Sites.');
+console.log('Built Next frontend + persistent D1 Worker backend.');

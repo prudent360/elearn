@@ -1,0 +1,22 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "tekskillup-academy",
+  "main": "dist/server/index.js",
+  "compatibility_date": "2026-09-22",
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "tekskillup-academy",
+      "database_id": "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "FILES",
+      "bucket_name": "tekskillup-academy-files"
+    }
+  ],
+  "vars": {
+    "STRIPE_BILLING_ENABLED": "false"
+  }
+}

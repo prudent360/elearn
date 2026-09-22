@@ -7,3 +7,6 @@ out/
 .env*
 !.env.example
 *.tsbuildinfo
+wrangler.jsonc
+.wrangler/
+cloudflare-secrets.json
