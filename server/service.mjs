@@ -1,7 +1,7 @@
 import { randomUUID, randomInt } from 'node:crypto';
 import { hashPassword, verifyPassword, newToken, digest, readSession, sessionCookie } from './auth.mjs';
 import { createConsoleMailer, verificationEmailHtml } from './mail.mjs';
-import { billingConfigured, createCheckout, createPortal, verifyStripeEvent } from './billing.mjs';
+import { billingConfigured, createCheckout, createPortal, retrievePrice, verifyStripeEvent } from './billing.mjs';
 const now=()=>new Date().toISOString();
 class HttpError extends Error {constructor(status,message){super(message);this.status=status}}
 const fail=(status,message)=>{throw new HttpError(status,message)};
@@ -12,6 +12,7 @@ const publicUser=u=>({id:u.id,email:u.email,name:u.name,role:u.role,disabled:!!u
 const USER_WITH_VERIFICATION="SELECT u.*, ev.verified_at AS email_verified_at FROM users u LEFT JOIN email_verifications ev ON ev.user_id=u.id";
 export function createService(db,seed=[],options={}) {
   const mailer=options.mail||createConsoleMailer();
+  const mailConfigured=mailer.configured!==false;
   const externalRequest=request=>({url:options.origin||request.url,headers:request.headers});
   const all=(sql,...args)=>db.all(sql,args), get=(sql,...args)=>db.get(sql,args), run=(sql,...args)=>db.run(sql,args);
   async function sendMail(message){try{await mailer.send(message)}catch(error){console.error('Email delivery threw an error',error.message)}}
@@ -22,6 +23,59 @@ export function createService(db,seed=[],options={}) {
   async function createVerificationCode(userId){const code=String(randomInt(0,1000000)).padStart(6,'0');await db.batch([['DELETE FROM email_tokens WHERE user_id=? AND kind=?',[userId,'verify']],['INSERT INTO email_tokens(id,user_id,kind,token_hash,expires_at,created_at) VALUES(?,?,?,?,?,?)',[randomUUID(),userId,'verify',digest(code),Date.now()+900000,now()]]]);return code}
   async function consumeVerificationCode(userId,code){if(typeof code!=='string'||!/^[0-9]{6}$/.test(code))fail(400,'Enter the 6-digit code from your email.');const row=await get('SELECT * FROM email_tokens WHERE user_id=? AND kind=? AND token_hash=?',userId,'verify',digest(code));if(!row||row.expires_at<Date.now())fail(400,'That code is incorrect or has expired.');await run('DELETE FROM email_tokens WHERE id=?',row.id)}
   async function sendVerificationCode(user,siteOrigin){const code=await createVerificationCode(user.id);await sendMail({to:user.email,subject:'Verify your email address',text:`Enter this code to verify your email address and finish setting up your Tekskillup Academy account:\n\n${code}\n\nThis code expires in 15 minutes. If you didn't create an account on Tekskillup Academy, you can safely ignore this email.`,html:verificationEmailHtml({code,email:user.email,siteOrigin})})}
+  // Sends a notification email to `userId` unless they have explicitly turned this preference
+  // off in Settings → Notifications (missing/never-saved preferences fall back to `defaultOn`,
+  // matching the toggle defaults shown in the UI). Used for the three event-driven alerts
+  // (graded assignments, community replies/upvotes); the weekly digest has its own cadence gate
+  // in runNotificationSweep and is opt-in, so it is not routed through this helper.
+  async function notifyIfEnabled(userId,prefKey,defaultOn,message){
+    const person=await get('SELECT email,settings FROM users WHERE id=?',userId);if(!person)return;
+    const prefs=JSON.parse(person.settings).notifications||{};
+    if((prefs[prefKey]===undefined?defaultOn:prefs[prefKey])!==true)return;
+    await sendMail({to:person.email,...message});
+  }
+  async function sendWeeklyDigest(learner,siteOrigin){
+    const since=new Date(Date.now()-604800000).toISOString();
+    const completed=await all('SELECT l.content FROM progress p JOIN lessons l ON l.id=p.lesson_id WHERE p.user_id=? AND p.completed_at IS NOT NULL AND p.completed_at>=?',learner.id,since);
+    const minutes=completed.reduce((sum,row)=>sum+(parseInt(JSON.parse(row.content).duration)||0),0);
+    const activeDays=new Set((await all('SELECT DISTINCT substr(completed_at,1,10) AS day FROM progress WHERE user_id=? AND completed_at IS NOT NULL',learner.id)).map(row=>row.day));
+    const dateAt=offset=>new Date(Date.now()+offset*86400000).toISOString().slice(0,10);
+    let streak=0;let offset=activeDays.has(dateAt(0))?0:-1;while(activeDays.has(dateAt(offset))){streak++;offset--;}
+    const hours=Math.round(minutes/60*10)/10;
+    await sendMail({to:learner.email,subject:'Your weekly learning digest',text:`Here's your week on Tekskillup Academy, ${learner.name}:\n\n- ${hours} hour${hours===1?'':'s'} studied\n- ${completed.length} lesson${completed.length===1?'':'s'} completed\n- ${streak}-day streak\n\nKeep it going: ${siteOrigin}/analytics\n\nYou're getting this because Weekly Learning Digest is on in your notification settings: ${siteOrigin}/settings`});
+  }
+  // Sends the time-based notifications that have no natural request to hang off of: live-class
+  // reminders (~30 minutes before a session starts) and the opt-in weekly digest. Idempotent and
+  // safe to call repeatedly — call it periodically (e.g. every 5-10 minutes) via the authenticated
+  // POST /api/notifications/sweep endpoint below, from an external scheduler. See BACKEND.md.
+  async function runNotificationSweep(siteOrigin){
+    const windowStart=new Date(Date.now()+1500000).toISOString(),windowEnd=new Date(Date.now()+2100000).toISOString();
+    const dueClasses=await all('SELECT l.*,c.metadata AS course_metadata FROM live_classes l JOIN courses c ON c.id=l.course_id WHERE l.starts_at>? AND l.starts_at<=? AND NOT EXISTS(SELECT 1 FROM live_class_reminders r WHERE r.live_class_id=l.id)',windowStart,windowEnd);
+    let remindersSent=0;
+    for(const session of dueClasses){
+      const learners=await all('SELECT u.* FROM users u JOIN enrollments e ON e.user_id=u.id WHERE e.course_id=? AND u.disabled=0',session.course_id);
+      const courseMetadata=JSON.parse(session.course_metadata);const courseTitle=courseMetadata.title;
+      for(const learner of learners){
+        if(courseMetadata.access==='pro'&&(await billingState(learner)).plan!=='pro')continue;
+        const prefs=JSON.parse(learner.settings).notifications||{};
+        if(prefs.liveClassReminders===false)continue;
+        await sendMail({to:learner.email,subject:`Starting soon: ${session.title}`,text:`${session.title} (${courseTitle}) starts at ${new Date(session.starts_at).toUTCString()} — about 30 minutes from now.\n\nJoin: ${session.meeting_url}\n\nManage reminders: ${siteOrigin}/settings`});
+        remindersSent++;
+      }
+      await run('INSERT OR IGNORE INTO live_class_reminders VALUES(?,?)',session.id,now());
+    }
+    const digestCutoff=new Date(Date.now()-604800000).toISOString();
+    const dueLearners=await all('SELECT u.* FROM users u WHERE u.disabled=0 AND NOT EXISTS(SELECT 1 FROM digest_log d WHERE d.user_id=u.id AND d.sent_at>?)',digestCutoff);
+    let digestsSent=0;
+    for(const learner of dueLearners){
+      const prefs=JSON.parse(learner.settings).notifications||{};
+      if(prefs.emailDigest!==true)continue;
+      await sendWeeklyDigest(learner,siteOrigin);
+      await run('INSERT INTO digest_log VALUES(?,?) ON CONFLICT(user_id) DO UPDATE SET sent_at=excluded.sent_at',learner.id,now());
+      digestsSent++;
+    }
+    return {remindersSent,digestsSent};
+  }
   async function seedCourses(){
     if(!(await get('SELECT id FROM courses LIMIT 1'))){
       const statements=[];
@@ -46,13 +100,13 @@ export function createService(db,seed=[],options={}) {
   function staff(user){if(!['admin','instructor'].includes(user.role))fail(403,'Instructor access required.')}
   function admin(user){if(user.role!=='admin')fail(403,'Administrator access required.')}
   async function owned(user,id){staff(user);const course=await get('SELECT * FROM courses WHERE id=?',id);if(!course)fail(404,'Course not found.');if(user.role!=='admin'&&course.owner_id!==user.id)fail(403,'This course belongs to another instructor.');return course}
-  async function enrolled(user,id){const row=await get('SELECT e.* FROM enrollments e JOIN courses c ON e.course_id=c.id WHERE e.user_id=? AND e.course_id=? AND c.publication=?',user.id,id,'published');if(!row)fail(403,'Enroll in an available course to access its lessons.');return row}
+  async function enrolled(user,id){const row=await get('SELECT e.*,c.metadata FROM enrollments e JOIN courses c ON e.course_id=c.id WHERE e.user_id=? AND e.course_id=? AND c.publication=?',user.id,id,'published');if(!row)fail(403,'Enroll in an available course to access its lessons.');if(JSON.parse(row.metadata).access==='pro'&&user.role==='learner'&&(await billingState(user)).plan!=='pro')fail(402,'This course requires an active Pro membership.');return row}
   async function lessonAccess(user,id){const lesson=await get('SELECT * FROM lessons WHERE id=?',id);if(!lesson)fail(404,'Lesson not found.');await enrolled(user,lesson.course_id);return lesson}
   async function audit(user,action,target){await run('INSERT INTO audit_log VALUES(?,?,?,?,?)',randomUUID(),user.id,action,target,now())}
   async function billingState(user){
     const subscription=await get('SELECT * FROM subscriptions WHERE user_id=?',user.id);
     const customer=await get('SELECT stripe_customer_id FROM billing_customers WHERE user_id=?',user.id);
-    const active=!!subscription&&['active','trialing'].includes(subscription.status);
+    const active=!!subscription&&['active','trialing'].includes(subscription.status)&&Number.isFinite(Date.parse(subscription.current_period_end))&&Date.parse(subscription.current_period_end)>Date.now();
     return {configured:billingConfigured(options.stripe),plan:active?'pro':'free',subscription:subscription?{status:subscription.status,planKey:subscription.plan_key,currentPeriodEnd:subscription.current_period_end,cancelAtPeriodEnd:!!subscription.cancel_at_period_end}:null,canManage:!!customer};
   }
   async function courseList(user,manage=false){
@@ -60,25 +114,26 @@ export function createService(db,seed=[],options={}) {
     const completions=await all('SELECT lesson_id FROM progress WHERE user_id=? AND completed_at IS NOT NULL',user.id);const done=new Set(completions.map(p=>p.lesson_id));
     const enrollmentRows=await all('SELECT course_id FROM enrollments WHERE user_id=?',user.id);const enrollments=new Set(enrollmentRows.map(e=>e.course_id));
     const saved=new Set((await all('SELECT course_id FROM bookmarks WHERE user_id=?',user.id)).map(e=>e.course_id));
+    const proAccess=user.role!=='learner'||(await billingState(user)).plan==='pro';
     return Promise.all(rows.map(async row=>{
       const lessonRows=await all('SELECT * FROM lessons WHERE course_id=? ORDER BY module_position,position',row.id);const modules=[];
-      const authorized=manage||enrollments.has(row.id);
+      const metadata=JSON.parse(row.metadata);const authorized=manage||(enrollments.has(row.id)&&(metadata.access!=='pro'||proAccess));
       for(const lesson of lessonRows){if(!modules[lesson.module_position])modules[lesson.module_position]={title:lesson.module_title,lessons:[]};const content=JSON.parse(lesson.content);if(!authorized){delete content.overview;delete content.exercise;delete content.videoUrl;}modules[lesson.module_position].lessons.push({...content,id:lesson.id,completed:done.has(lesson.id)})}
       const total=lessonRows.length;const count=lessonRows.filter(l=>done.has(l.id)).length;const progress=total?Math.round(count/total*100):0;
-      return {...JSON.parse(row.metadata),id:row.id,modules:modules.filter(Boolean),progress,status:enrollments.has(row.id)?progress===100?'completed':'in-progress':'available',saved:saved.has(row.id),publication:row.publication,ownerId:row.owner_id,enrollmentCount:manage?(await get('SELECT COUNT(*) AS n FROM enrollments WHERE course_id=?',row.id)).n:undefined};
+      return {...metadata,id:row.id,modules:modules.filter(Boolean),progress,status:enrollments.has(row.id)?progress===100?'completed':'in-progress':'available',saved:saved.has(row.id),publication:row.publication,ownerId:row.owner_id,enrollmentCount:manage?(await get('SELECT COUNT(*) AS n FROM enrollments WHERE course_id=?',row.id)).n:undefined};
     }));
   }
   async function snapshot(user){
-    const courses=await courseList(user);const profile=JSON.parse(user.profile);const settings=JSON.parse(user.settings);
+    const courses=await courseList(user);const profile=JSON.parse(user.profile);const settings=JSON.parse(user.settings);const proAccess=user.role!=='learner'||(await billingState(user)).plan==='pro';
     const savedCourses=(await all('SELECT course_id FROM bookmarks WHERE user_id=?',user.id)).map(x=>x.course_id);
     const enrolledCourses=(await all('SELECT course_id FROM enrollments WHERE user_id=?',user.id)).map(x=>x.course_id);
     const notes=await all('SELECT lesson_id,body FROM notes WHERE user_id=?',user.id);
     const progress=await all('SELECT p.*,l.course_id,l.content FROM progress p JOIN lessons l ON p.lesson_id=l.id WHERE p.user_id=? ORDER BY last_seen DESC',user.id);
     const certificates=await all('SELECT c.*,co.metadata FROM certificates c JOIN courses co ON co.id=c.course_id WHERE c.user_id=? ORDER BY issued_at DESC',user.id);
     const attachmentRows=await all('SELECT id,assignment_id,filename,byte_size FROM attachments WHERE user_id=?',user.id);
-    const assignments=await all("SELECT a.*,c.metadata,s.id AS submission_id,s.status,s.body,s.repo_url,s.score,s.feedback,s.submitted_at FROM assignments a JOIN courses c ON c.id=a.course_id JOIN enrollments e ON e.course_id=a.course_id AND e.user_id=? LEFT JOIN submissions s ON s.assignment_id=a.id AND s.user_id=? WHERE c.publication='published'",user.id,user.id);
+    const assignments=(await all("SELECT a.*,c.metadata,s.id AS submission_id,s.status,s.body,s.repo_url,s.score,s.feedback,s.submitted_at FROM assignments a JOIN courses c ON c.id=a.course_id JOIN enrollments e ON e.course_id=a.course_id AND e.user_id=? LEFT JOIN submissions s ON s.assignment_id=a.id AND s.user_id=? WHERE c.publication='published'",user.id,user.id)).filter(a=>JSON.parse(a.metadata).access!=='pro'||proAccess);
     const threads=await all('SELECT t.*,u.name,u.profile,(SELECT COUNT(*) FROM votes v WHERE v.thread_id=t.id) AS upvotes,(SELECT COUNT(*) FROM replies r WHERE r.thread_id=t.id) AS commentsCount FROM threads t JOIN users u ON u.id=t.author_id ORDER BY t.created_at DESC LIMIT 100');
-    const live=await all("SELECT l.*,u.name FROM live_classes l JOIN users u ON u.id=l.host_id JOIN enrollments e ON e.course_id=l.course_id AND e.user_id=? WHERE l.starts_at>? ORDER BY starts_at LIMIT 50",user.id,now());
+    const live=(await all("SELECT l.*,u.name,c.metadata FROM live_classes l JOIN users u ON u.id=l.host_id JOIN courses c ON c.id=l.course_id JOIN enrollments e ON e.course_id=l.course_id AND e.user_id=? WHERE l.starts_at>? ORDER BY starts_at LIMIT 50",user.id,now())).filter(l=>JSON.parse(l.metadata).access!=='pro'||proAccess);
     const completed=progress.filter(p=>p.completed_at);const minutes=completed.reduce((sum,p)=>sum+(parseInt(JSON.parse(p.content).duration)||0),0);
     const days=new Map();for(const item of completed){const day=item.completed_at.slice(0,10);days.set(day,(days.get(day)||0)+(parseInt(JSON.parse(item.content).duration)||0));}
     const dateAt=offset=>new Date(Date.now()+offset*86400000).toISOString().slice(0,10);
@@ -109,13 +164,33 @@ export function createService(db,seed=[],options={}) {
         if(event.type==='checkout.session.completed'){
           const userId=object.client_reference_id||object.metadata?.user_id;
           if(userId&&object.customer)statements.push(['INSERT INTO billing_customers(user_id,stripe_customer_id,created_at) VALUES(?,?,?) ON CONFLICT(user_id) DO UPDATE SET stripe_customer_id=excluded.stripe_customer_id',[userId,object.customer,now()]]);
-          if(userId&&object.subscription){const plan=object.metadata?.plan_key||'pro-monthly';const price=options.stripe?.prices?.[plan]||'';statements.push(['INSERT INTO subscriptions(user_id,stripe_subscription_id,plan_key,price_id,status,updated_at) VALUES(?,?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET stripe_subscription_id=excluded.stripe_subscription_id,plan_key=excluded.plan_key,price_id=excluded.price_id,status=excluded.status,updated_at=excluded.updated_at',[userId,object.subscription,plan,price,'active',now()]])}
         }
         if(event.type.startsWith('customer.subscription.')){
           const customerId=typeof object.customer==='string'?object.customer:object.customer?.id;const customer=customerId&&await get('SELECT user_id FROM billing_customers WHERE stripe_customer_id=?',customerId);const userId=object.metadata?.user_id||customer?.user_id;
-          if(userId){const item=object.items?.data?.[0]||{};const priceId=typeof item.price==='string'?item.price:item.price?.id||'';const plan=object.metadata?.plan_key||Object.entries(options.stripe?.prices||{}).find(([,id])=>id===priceId)?.[0]||'pro-monthly';const period=object.current_period_end||item.current_period_end;statements.push(['INSERT INTO subscriptions(user_id,stripe_subscription_id,plan_key,price_id,status,current_period_end,cancel_at_period_end,updated_at) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET stripe_subscription_id=excluded.stripe_subscription_id,plan_key=excluded.plan_key,price_id=excluded.price_id,status=excluded.status,current_period_end=excluded.current_period_end,cancel_at_period_end=excluded.cancel_at_period_end,updated_at=excluded.updated_at',[userId,object.id,plan,priceId,object.status||'canceled',period?new Date(period*1000).toISOString():null,object.cancel_at_period_end?1:0,now()]])}
+          if(userId&&typeof object.id==='string'){
+            const item=object.items?.data?.[0]||{};const previous=await get('SELECT plan_key,price_id FROM subscriptions WHERE stripe_subscription_id=?',object.id);const suppliedPriceId=typeof item.price==='string'?item.price:item.price?.id;const priceId=suppliedPriceId||previous?.price_id||'';
+            const plan=Object.entries(options.stripe?.prices||{}).find(([,id])=>id===priceId)?.[0]||previous?.plan_key;
+            const watermark=await get('SELECT event_created,event_id FROM subscription_event_watermarks WHERE stripe_subscription_id=?',object.id);
+            const eventCreated=Number(event.created)||0;
+            if(plan&&(!watermark||eventCreated>watermark.event_created||(eventCreated===watermark.event_created&&event.id>watermark.event_id))){
+              const period=object.current_period_end||item.current_period_end;
+              const recognized=Object.values(options.stripe?.prices||{}).includes(priceId);
+              statements.push(['INSERT INTO subscriptions(user_id,stripe_subscription_id,plan_key,price_id,status,current_period_end,cancel_at_period_end,updated_at) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET stripe_subscription_id=excluded.stripe_subscription_id,plan_key=excluded.plan_key,price_id=excluded.price_id,status=excluded.status,current_period_end=excluded.current_period_end,cancel_at_period_end=excluded.cancel_at_period_end,updated_at=excluded.updated_at',[userId,object.id,plan,priceId,recognized?object.status||'canceled':'unrecognized_price',period?new Date(period*1000).toISOString():null,object.cancel_at_period_end?1:0,now()]]);
+              statements.push(['INSERT INTO subscription_event_watermarks(stripe_subscription_id,event_created,event_id) VALUES(?,?,?) ON CONFLICT(stripe_subscription_id) DO UPDATE SET event_created=excluded.event_created,event_id=excluded.event_id',[object.id,eventCreated,event.id]]);
+              if(customerId)statements.push(['INSERT INTO billing_customers(user_id,stripe_customer_id,created_at) VALUES(?,?,?) ON CONFLICT(user_id) DO UPDATE SET stripe_customer_id=excluded.stripe_customer_id',[userId,customerId,now()]]);
+            }
+          }
         }
         statements.push(['INSERT OR IGNORE INTO stripe_events VALUES(?,?,?)',[event.id,event.type,now()]]);await db.batch(statements);return reply({received:true});
+      }
+      // Runs the time-based notifications (live-class reminders, weekly digest). Has no user
+      // session — it's meant to be called by an external scheduler on a short interval — so it
+      // authenticates with a bearer credential instead, the same pattern as the Stripe webhook.
+      if(path[0]==='notifications'&&path[1]==='sweep'&&method==='POST'){
+        if(!options.notificationsToken)fail(503,'Scheduled notifications are not configured.');
+        const header=request.headers.get('authorization')||'';const token=header.startsWith('Bearer ')?header.slice(7):'';
+        if(!token||digest(token)!==digest(options.notificationsToken))fail(403,'Invalid notification sweep credential.');
+        return reply(await runNotificationSweep(siteOrigin));
       }
       if(!['GET','HEAD'].includes(method)){
         const origin=request.headers.get('origin');
@@ -126,7 +201,7 @@ export function createService(db,seed=[],options={}) {
       const isUpload=path[0]==='assignments'&&path[2]==='attachment'&&method==='POST';
       const body=['POST','PUT','PATCH'].includes(method)&&!isUpload?await readBody(request):{};
       if(path[0]==='auth'){
-        if(method==='GET'&&path[1]==='session'){const user=await currentUser(request,false);return reply({user:user?publicUser(user):null,setupRequired:!(await get("SELECT id FROM users WHERE role='admin' LIMIT 1"))})}
+        if(method==='GET'&&path[1]==='session'){const user=await currentUser(request,false);return reply({user:user?publicUser(user):null,mailConfigured,setupRequired:!(await get("SELECT id FROM users WHERE role='admin' LIMIT 1"))})}
         if(method==='POST'&&['register','login','setup'].includes(path[1])){
           const email=text(body.email,'Email',254).toLowerCase();if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))fail(400,'Enter a valid email.');
           const password=body.password;const minimum=path[1]==='login'?6:12;if(typeof password!=='string'||password.length<minimum||password.length>128)fail(400,path[1]==='login'?'Email or password is incorrect.':'Use a password between 12 and 128 characters.');
@@ -148,14 +223,14 @@ export function createService(db,seed=[],options={}) {
             user=await get('SELECT * FROM users WHERE id=?',id);if(!user)fail(409,'Administrator setup is already complete.');newAccount=true;
           }
           const token=newToken();await db.batch([['DELETE FROM sessions WHERE expires_at<?',[Date.now()]],['INSERT INTO sessions VALUES(?,?,?)',[digest(token),user.id,Date.now()+604800000]]]);
-          if(newAccount)await sendVerificationCode(user,siteOrigin);
+          if(newAccount&&mailConfigured)await sendVerificationCode(user,siteOrigin);
           return reply({user:publicUser(user)},200,{'Set-Cookie':sessionCookie(token,externalRequest(request))});
         }
         if(method==='POST'&&path[1]==='logout'){const token=readSession(externalRequest(request));if(token)await run('DELETE FROM sessions WHERE token_hash=?',digest(token));return reply({ok:true},200,{'Set-Cookie':sessionCookie('',externalRequest(request),true)})}
         if(method==='POST'&&path[1]==='password'){
           const user=await currentUser(request);await limit('password:'+user.id,10);
           if(typeof body.currentPassword!=='string'||!(await verifyPassword(body.currentPassword,user.password_hash)))fail(401,'Current password is incorrect.');
-          if(typeof body.password!=='string'||body.password.length<6||body.password.length>128)fail(400,'Use a password between 6 and 128 characters.');
+          if(typeof body.password!=='string'||body.password.length<12||body.password.length>128)fail(400,'Use a password between 12 and 128 characters.');
           await db.batch([['UPDATE users SET password_hash=? WHERE id=?',[await hashPassword(body.password),user.id]],['DELETE FROM sessions WHERE user_id=?',[user.id]]]);return reply({ok:true},200,{'Set-Cookie':sessionCookie('',externalRequest(request),true)});
         }
         if(method==='POST'&&path[1]==='verify-email'){
@@ -166,12 +241,14 @@ export function createService(db,seed=[],options={}) {
           return reply({ok:true});
         }
         if(method==='POST'&&path[1]==='resend-verification'){
+          if(!mailConfigured)fail(503,'Email delivery is not configured yet.');
           const user=await currentUser(request);await limit('verify:'+user.id,5);
           if(await get('SELECT 1 FROM email_verifications WHERE user_id=?',user.id))fail(409,'Your email is already verified.');
           await sendVerificationCode(user,siteOrigin);
           return reply({ok:true});
         }
         if(method==='POST'&&path[1]==='reset-request'){
+          if(!mailConfigured)fail(503,'Password reset by email is not available yet. Contact the academy administrator.');
           const resetEmail=text(body.email,'Email',254).toLowerCase();await limit('reset:'+resetEmail,6);await limit('reset-global',300);
           const target=await get('SELECT * FROM users WHERE email=? AND disabled=0',resetEmail);
           if(target){const resetToken=await createEmailToken(target.id,'reset',3600000);
@@ -191,6 +268,10 @@ export function createService(db,seed=[],options={}) {
       if(path[0]==='workspace'&&method==='GET')return reply(await snapshot(user));
       if(path[0]==='billing'){
         if(method==='GET'&&!path[1])return reply(await billingState(user));
+        if(method==='GET'&&path[1]==='plans'){
+          if(!billingConfigured(options.stripe))return reply({configured:false,plans:[]});
+          try{const plans=await Promise.all(['pro-monthly','pro-yearly'].map(async key=>{const price=await retrievePrice(options.stripe,options.stripe.prices[key]);if(!price.active||!Number.isInteger(price.unit_amount)||!price.currency||price.recurring?.interval!==(key==='pro-monthly'?'month':'year')||price.recurring?.interval_count!==1)throw Error('Configured Stripe Prices must be active monthly and yearly recurring prices.');return {key,unitAmount:price.unit_amount,currency:price.currency,interval:price.recurring.interval}}));return reply({configured:true,plans});}catch(error){fail(502,'Billing prices are unavailable. Check the configured Stripe Prices.');}
+        }
         if(path[1]==='checkout'&&method==='POST'){
           if(!billingConfigured(options.stripe))fail(503,'Payments are not configured yet.');const plan=body.plan;if(!['pro-monthly','pro-yearly'].includes(plan))fail(400,'Choose a valid plan.');const state=await billingState(user);if(state.plan==='pro')fail(409,'You already have an active plan. Manage it from billing settings.');const customer=await get('SELECT stripe_customer_id FROM billing_customers WHERE user_id=?',user.id);let session;try{session=await createCheckout(options.stripe,{user,customerId:customer?.stripe_customer_id,plan,origin:siteOrigin.replace(/\/$/,'')})}catch(error){fail(502,error.message)}return reply({url:session.url});
         }
@@ -253,9 +334,18 @@ export function createService(db,seed=[],options={}) {
       if(path[0]==='threads'){
         if(method==='POST'&&!path[1]){const channel=text(body.channel,'Channel',60);if(!['#ui-ux-design','#fullstack-cohort','#announcements','#career-lounge'].includes(channel))fail(400,'Invalid channel.');if(channel==='#announcements')staff(user);await run('INSERT INTO threads VALUES(?,?,?,?,?,?)',randomUUID(),user.id,channel,text(body.title,'Title',200),text(body.content,'Discussion',10000),now());return reply({ok:true},201)}
         const thread=await get('SELECT * FROM threads WHERE id=?',path[1]||'');if(!thread)fail(404,'Discussion not found.');
-        if(path[2]==='vote'&&method==='PUT'){await run('INSERT OR IGNORE INTO votes VALUES(?,?)',thread.id,user.id);return reply({ok:true})}
+        if(path[2]==='vote'&&method==='PUT'){
+          const already=await get('SELECT 1 FROM votes WHERE thread_id=? AND user_id=?',thread.id,user.id);
+          await run('INSERT OR IGNORE INTO votes VALUES(?,?)',thread.id,user.id);
+          if(!already&&thread.author_id!==user.id)await notifyIfEnabled(thread.author_id,'communityReplies',true,{subject:`${user.name} upvoted "${thread.title}"`,text:`${user.name} upvoted your discussion "${thread.title}" in ${thread.channel}.\n\nView it: ${siteOrigin}/community\n\nManage this email: ${siteOrigin}/settings`});
+          return reply({ok:true})
+        }
         if(path[2]==='replies'&&method==='GET')return reply(await all('SELECT r.id,r.body,r.created_at,u.name FROM replies r JOIN users u ON u.id=r.author_id WHERE r.thread_id=? ORDER BY r.created_at',thread.id));
-        if(path[2]==='replies'&&method==='POST'){await run('INSERT INTO replies VALUES(?,?,?,?,?)',randomUUID(),thread.id,user.id,text(body.content,'Reply',10000),now());return reply({ok:true},201)}
+        if(path[2]==='replies'&&method==='POST'){
+          await run('INSERT INTO replies VALUES(?,?,?,?,?)',randomUUID(),thread.id,user.id,text(body.content,'Reply',10000),now());
+          if(thread.author_id!==user.id)await notifyIfEnabled(thread.author_id,'communityReplies',true,{subject:`${user.name} replied to "${thread.title}"`,text:`${user.name} replied to your discussion "${thread.title}" in ${thread.channel}.\n\nView it: ${siteOrigin}/community\n\nManage this email: ${siteOrigin}/settings`});
+          return reply({ok:true},201)
+        }
         if(method==='DELETE'){admin(user);await run('DELETE FROM threads WHERE id=?',thread.id);await audit(user,'thread.delete',thread.id);return reply({ok:true})}
       }
       if(path[0]==='certificates'&&method==='GET'){
@@ -288,10 +378,14 @@ export function createService(db,seed=[],options={}) {
         }
         if(path[1]==='assignments'&&method==='POST'){await owned(user,body.courseId);const id=randomUUID();await run('INSERT INTO assignments VALUES(?,?,?,?,?)',id,body.courseId,text(body.title,'Title',200),text(body.instructions,'Instructions',15000),body.dueDate?text(body.dueDate,'Due date',50):null);return reply({id},201)}
         if(path[1]==='submissions'&&path[2]&&method==='PATCH'){
-          const submission=await get('SELECT s.*,a.course_id FROM submissions s JOIN assignments a ON a.id=s.assignment_id WHERE s.id=?',path[2]);if(!submission)fail(404,'Submission not found.');await owned(user,submission.course_id);
+          const submission=await get('SELECT s.*,a.course_id,a.title AS assignment_title,c.metadata AS course_metadata FROM submissions s JOIN assignments a ON a.id=s.assignment_id JOIN courses c ON c.id=a.course_id WHERE s.id=?',path[2]);if(!submission)fail(404,'Submission not found.');await owned(user,submission.course_id);
           if(!Number.isInteger(body.score)||body.score<0||body.score>100)fail(400,'Score must be an integer from 0 to 100.');
           if(submission.status==='completed')fail(409,'This submission has already been graded.');
-          await run("UPDATE submissions SET status='completed',score=?,feedback=?,graded_by=?,graded_at=? WHERE id=?",body.score,text(body.feedback,'Feedback',10000),user.id,now(),submission.id);await run("INSERT OR IGNORE INTO certificates(id,user_id,course_id,issued_at) SELECT ?,?,?,? WHERE NOT EXISTS(SELECT 1 FROM lessons l WHERE l.course_id=? AND NOT EXISTS(SELECT 1 FROM progress p WHERE p.user_id=? AND p.lesson_id=l.id AND p.completed_at IS NOT NULL)) AND NOT EXISTS(SELECT 1 FROM assignments a WHERE a.course_id=? AND NOT EXISTS(SELECT 1 FROM submissions s WHERE s.assignment_id=a.id AND s.user_id=? AND s.status='completed' AND s.score>=50))",randomUUID(),submission.user_id,submission.course_id,now(),submission.course_id,submission.user_id,submission.course_id,submission.user_id);await audit(user,'submission.grade',submission.id);return reply({ok:true});
+          const feedback=text(body.feedback,'Feedback',10000);
+          await run("UPDATE submissions SET status='completed',score=?,feedback=?,graded_by=?,graded_at=? WHERE id=?",body.score,feedback,user.id,now(),submission.id);await run("INSERT OR IGNORE INTO certificates(id,user_id,course_id,issued_at) SELECT ?,?,?,? WHERE NOT EXISTS(SELECT 1 FROM lessons l WHERE l.course_id=? AND NOT EXISTS(SELECT 1 FROM progress p WHERE p.user_id=? AND p.lesson_id=l.id AND p.completed_at IS NOT NULL)) AND NOT EXISTS(SELECT 1 FROM assignments a WHERE a.course_id=? AND NOT EXISTS(SELECT 1 FROM submissions s WHERE s.assignment_id=a.id AND s.user_id=? AND s.status='completed' AND s.score>=50))",randomUUID(),submission.user_id,submission.course_id,now(),submission.course_id,submission.user_id,submission.course_id,submission.user_id);await audit(user,'submission.grade',submission.id);
+          const courseTitle=JSON.parse(submission.course_metadata).title;
+          await notifyIfEnabled(submission.user_id,'assignmentGraded',true,{subject:`Your submission for "${submission.assignment_title}" was graded`,text:`Your instructor graded your submission for "${submission.assignment_title}" in ${courseTitle}.\n\nScore: ${body.score}/100\n${feedback?`\nFeedback:\n${feedback}\n`:''}\nView it: ${siteOrigin}/assignments\n\nManage this email: ${siteOrigin}/settings`});
+          return reply({ok:true});
         }
         if(path[1]==='live-classes'&&method==='POST'){await owned(user,body.courseId);if(typeof body.startsAt!=='string'||!Number.isFinite(Date.parse(body.startsAt)))fail(400,'Invalid session date.');const id=randomUUID();await run('INSERT INTO live_classes VALUES(?,?,?,?,?,?)',id,body.courseId,user.id,text(body.title,'Title',200),new Date(body.startsAt).toISOString(),webUrl(body.meetingUrl,'Meeting URL',false));return reply({id},201)}
       }
@@ -308,6 +402,6 @@ export function createService(db,seed=[],options={}) {
       fail(404,'Endpoint not found.');
     } catch(error){if(error instanceof HttpError)return reply({error:error.message},error.status);if(String(error.message).includes('UNIQUE constraint'))return reply({error:'This record already exists. Refresh and try again.'},409);console.error('LMS request failed',error.message);return reply({error:'The request could not be completed. Please try again.'},500)}
   }
-  return {handle,seedCourses};
+  return {handle,seedCourses,runNotificationSweep};
 }
 function reply(data,status=200,headers={}){return Response.json(data,{status,headers:{'Cache-Control':'no-store','X-Content-Type-Options':'nosniff',...headers}})}

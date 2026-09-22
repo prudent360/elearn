@@ -52,20 +52,112 @@ test('Password reset never reveals which emails exist and consumes its token onc
   assert.equal((await user.request('auth/login','POST',{email:'reset@example.com',password:'a brand new long password'})).status,200);
   assert.equal((await user.request('auth/reset','POST',{token:resetToken,password:'yet another long password'})).status,400,'reset tokens are single-use');
 });
-test('Stripe checkout uses server prices, signed webhooks grant Pro without changing roles, and events are idempotent',async t=>{
+test('Stripe checkout and subscription lifecycle enforce paid access without changing roles',async t=>{
   let checkoutBody='';const webhookSecret='whsec_test_secret';
-  const stripe={secretKey:'sk_test_example',webhookSecret,prices:{'pro-monthly':'price_month','pro-yearly':'price_year'},fetch:async(_url,init)=>{checkoutBody=String(init.body);return new Response(JSON.stringify({url:'https://checkout.stripe.com/test-session'}),{status:200,headers:{'content-type':'application/json'}})}};
+  const stripe={enabled:true,secretKey:'sk_test_example',webhookSecret,prices:{'pro-monthly':'price_month','pro-yearly':'price_year'},fetch:async(url,init)=>{if(url.includes('/prices/'))return new Response(JSON.stringify({active:true,unit_amount:18000,currency:'gbp',recurring:{interval:url.endsWith('price_year')?'year':'month',interval_count:1}}),{status:200});checkoutBody=String(init.body);return new Response(JSON.stringify({url:'https://checkout.stripe.com/test-session'}),{status:200,headers:{'content-type':'application/json'}})}};
   const f=await fixture(t,{stripe});
   const learnerId=f.users.find(user=>user.email==='learner@example.com').id;
   const draft=await f.admin.request('instructor/courses','POST',{title:'Paid course',description:'Members only',category:'Design',access:'pro',publication:'published',modules:[{title:'Start',lessons:[{title:'Welcome',type:'reading',duration:'10m'}]}]});
   assert.equal((await f.learner.request('courses/'+draft.body.id+'/enrollment','POST',{})).status,402);
   const checkout=await f.learner.request('billing/checkout','POST',{plan:'pro-yearly',price:'price_attacker'});
   assert.equal(checkout.status,200);assert.equal(checkout.body.url,'https://checkout.stripe.com/test-session');assert.match(checkoutBody,/price_year/);assert.doesNotMatch(checkoutBody,/price_attacker/);
+  assert.equal((await f.learner.request('billing/plans')).body.plans.length,2);
   const event={id:'evt_checkout_1',type:'checkout.session.completed',data:{object:{client_reference_id:learnerId,customer:'cus_learner',subscription:'sub_learner',metadata:{user_id:learnerId,plan_key:'pro-yearly'}}}};
-  const raw=JSON.stringify(event);const timestamp=Math.floor(Date.now()/1000);const signature=createHmac('sha256',webhookSecret).update(timestamp+'.'+raw).digest('hex');
-  const send=()=>f.service.handle(new Request('http://localhost/api/billing/webhook',{method:'POST',headers:{'stripe-signature':`t=${timestamp},v1=${signature}`},body:raw}));
-  assert.equal((await send()).status,200);assert.equal((await send()).status,200);
+  const send=(payload)=>{const raw=JSON.stringify(payload);const timestamp=Math.floor(Date.now()/1000);const signature=createHmac('sha256',webhookSecret).update(timestamp+'.'+raw).digest('hex');return f.service.handle(new Request('http://localhost/api/billing/webhook',{method:'POST',headers:{'stripe-signature':`t=${timestamp},v1=${signature}`},body:raw}))};
+  assert.equal((await send(event)).status,200);assert.equal((await send(event)).status,200);
+  assert.equal((await f.learner.request('workspace')).body.billing.plan,'free','Checkout completion alone cannot grant access');
+  const future=Math.floor(Date.now()/1000)+86400;
+  const subscription={id:'evt_subscription_active',created:100,type:'customer.subscription.updated',data:{object:{id:'sub_learner',customer:'cus_learner',status:'active',current_period_end:future,items:{data:[{price:{id:'price_year'}}]},metadata:{user_id:learnerId}}}};
+  assert.equal((await send(subscription)).status,200);
   const workspace=(await f.learner.request('workspace')).body;assert.equal(workspace.billing.plan,'pro');assert.equal(workspace.user.role,'learner');
   assert.equal((await f.learner.request('courses/'+draft.body.id+'/enrollment','POST',{})).status,200);
+  const lessonId=workspace.courses.find(course=>course.id===draft.body.id).modules[0].lessons[0].id;
+  assert.equal((await f.learner.request('lessons/'+lessonId+'/resource')).status,200);
+  await f.db.run('UPDATE subscriptions SET current_period_end=? WHERE user_id=?',[new Date(Date.now()-60000).toISOString(),learnerId]);
+  assert.equal((await f.learner.request('lessons/'+lessonId+'/resource')).status,402,'a stale active webhook cannot extend an expired period forever');
+  await f.db.run('UPDATE subscriptions SET current_period_end=? WHERE user_id=?',[new Date(future*1000).toISOString(),learnerId]);
+  const canceled={...subscription,id:'evt_subscription_canceled',created:200,type:'customer.subscription.deleted',data:{object:{...subscription.data.object,status:'canceled'}}};
+  assert.equal((await send(canceled)).status,200);
+  assert.equal((await f.learner.request('workspace')).body.billing.plan,'free');
+  assert.equal((await f.learner.request('lessons/'+lessonId+'/resource')).status,402,'an existing enrollment cannot bypass expired paid access');
+  const locked=(await f.learner.request('workspace')).body.courses.find(course=>course.id===draft.body.id);
+  assert.equal(locked.modules[0].lessons[0].overview,undefined,'the workspace omits paid lesson content after cancellation');
+  assert.equal((await send(subscription)).status,200,'an older event is accepted but cannot restore access');
+  assert.equal((await f.learner.request('workspace')).body.billing.plan,'free');
+  const unknown={...subscription,id:'evt_subscription_unknown_price',created:300,data:{object:{...subscription.data.object,items:{data:[{price:{id:'price_other_product'}}]}}}};
+  assert.equal((await send(unknown)).status,200);
+  assert.equal((await f.learner.request('workspace')).body.billing.plan,'free','an unrecognized price cannot grant Pro');
   const events=await f.db.get('SELECT COUNT(*) AS n FROM stripe_events WHERE event_id=?',['evt_checkout_1']);assert.equal(events.n,1);
+});
+test('Assignment-graded and community reply/upvote emails honor notification preferences',async t=>{
+  const sent=[];const f=await fixture(t,{mail:{send:async message=>{sent.push(message)}}});
+  const a=await f.admin.request('instructor/assignments','POST',{courseId:'c1',title:'Practice',instructions:'Show your work'});
+  await f.learner.request('courses/c1/enrollment','POST',{});
+  await f.learner.request('assignments/'+a.body.id+'/submission','PUT',{body:'my work'});
+  const submission=(await f.admin.request('instructor/overview')).body.submissions[0];
+  sent.length=0;
+  await f.admin.request('instructor/submissions/'+submission.id,'PATCH',{score:90,feedback:'Great work'});
+  assert.equal(sent.length,1);assert.match(sent[0].subject,/graded/);assert.equal(sent[0].to,'learner@example.com');assert.match(sent[0].text,/90\/100/);assert.match(sent[0].text,/Great work/);
+
+  // Turning the preference off means grading a second assignment sends nothing.
+  await f.learner.request('settings','PATCH',{notifications:{assignmentGraded:false}});
+  const a2=await f.admin.request('instructor/assignments','POST',{courseId:'c1',title:'Practice 2',instructions:'Show more work'});
+  await f.learner.request('assignments/'+a2.body.id+'/submission','PUT',{body:'more work'});
+  const submission2=(await f.admin.request('instructor/overview')).body.submissions.find(s=>s.id!==submission.id);
+  sent.length=0;
+  await f.admin.request('instructor/submissions/'+submission2.id,'PATCH',{score:80,feedback:'Good'});
+  assert.equal(sent.length,0,'the learner opted out of assignment-graded emails');
+
+  await f.learner.request('threads','POST',{channel:'#ui-ux-design',title:'Question',content:'How does this work?'});
+  const threadId=(await f.learner.request('workspace')).body.communityThreads[0].id;
+  sent.length=0;
+  await f.other.request('threads/'+threadId+'/replies','POST',{content:'Try this.'});
+  assert.equal(sent.length,1);assert.match(sent[0].subject,/replied/);assert.equal(sent[0].to,'learner@example.com');
+  sent.length=0;
+  await f.learner.request('threads/'+threadId+'/replies','POST',{content:'Thanks, replying to myself.'});
+  assert.equal(sent.length,0,'authors are never emailed about their own replies');
+  sent.length=0;
+  await f.other.request('threads/'+threadId+'/vote','PUT',{});
+  assert.equal(sent.length,1);assert.match(sent[0].subject,/upvoted/);
+  sent.length=0;
+  await f.other.request('threads/'+threadId+'/vote','PUT',{});
+  assert.equal(sent.length,0,'a repeat vote from the same person sends nothing again');
+});
+test('Notification sweep is disabled until LMS_NOTIFICATIONS_TOKEN is configured',async t=>{
+  const f=await fixture(t);
+  assert.equal((await f.service.handle(new Request('http://localhost/api/notifications/sweep',{method:'POST'}))).status,503);
+});
+test('Notification sweep sends live-class reminders once and the opt-in weekly digest roughly weekly, and requires its bearer token',async t=>{
+  const sent=[];const f=await fixture(t,{mail:{send:async message=>{sent.push(message)}},notificationsToken:'sweep-secret'});
+  await f.learner.request('courses/c1/enrollment','POST',{});
+  const soon=new Date(Date.now()+30*60000).toISOString(),later=new Date(Date.now()+86400000).toISOString();
+  assert.equal((await f.admin.request('instructor/live-classes','POST',{courseId:'c1',title:'Live Q&A',startsAt:soon,meetingUrl:'https://meet.example.com/near'})).status,201);
+  assert.equal((await f.admin.request('instructor/live-classes','POST',{courseId:'c1',title:'Tomorrow session',startsAt:later,meetingUrl:'https://meet.example.com/later'})).status,201);
+
+  const sweep=(authorization)=>f.service.handle(new Request('http://localhost/api/notifications/sweep',{method:'POST',headers:authorization?{authorization}:{}}));
+  assert.equal((await sweep()).status,403,'a request with no bearer token is rejected');
+  assert.equal((await sweep('Bearer wrong')).status,403);
+
+  sent.length=0;
+  let result=await (await sweep('Bearer sweep-secret')).json();
+  assert.equal(result.remindersSent,1,'only the class starting in ~30 minutes is due');
+  assert.equal(sent.length,1);assert.match(sent[0].subject,/Starting soon/);assert.equal(sent[0].to,'learner@example.com');assert.match(sent[0].text,/near/);
+
+  sent.length=0;
+  result=await (await sweep('Bearer sweep-secret')).json();
+  assert.equal(result.remindersSent,0,'the same class is never reminded twice');
+  assert.equal(sent.length,0);
+
+  assert.equal((await (await sweep('Bearer sweep-secret')).json()).digestsSent,0,'nobody has opted into the weekly digest yet');
+  await f.learner.request('settings','PATCH',{notifications:{emailDigest:true}});
+  await f.learner.request('lessons/l1/progress','PUT',{completed:true});
+  sent.length=0;
+  result=await (await sweep('Bearer sweep-secret')).json();
+  assert.equal(result.digestsSent,1);
+  const digestEmail=sent.find(m=>/weekly learning digest/i.test(m.subject));
+  assert.ok(digestEmail);assert.equal(digestEmail.to,'learner@example.com');assert.match(digestEmail.text,/1 lesson/);
+
+  sent.length=0;
+  await sweep('Bearer sweep-secret');
+  assert.equal(sent.filter(m=>/weekly learning digest/i.test(m.subject)).length,0,'a digest is not re-sent within the same week');
 });

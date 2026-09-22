@@ -14,7 +14,7 @@ interface LearningContextType {
  notificationSettings:NotificationSettings;updateNotificationSettings:(settings:Partial<NotificationSettings>)=>Promise<boolean>;
  workspaceSettings:WorkspaceSettings;updateWorkspaceSettings:(settings:Partial<WorkspaceSettings>)=>Promise<boolean>;
  account:Account;logout:()=>Promise<void>;api:(path:string,method?:string,body?:unknown)=>Promise<any>;refresh:()=>Promise<void>;noteStatus:string;lastLessons:Record<string,string>;
- resendVerification:()=>Promise<boolean>;billing:BillingState;startCheckout:(plan:'pro-monthly'|'pro-yearly')=>Promise<void>;openBillingPortal:()=>Promise<void>;
+ resendVerification:()=>Promise<boolean>;mailConfigured:boolean;billing:BillingState;startCheckout:(plan:'pro-monthly'|'pro-yearly')=>Promise<void>;openBillingPortal:()=>Promise<void>;
 }
 const Context=createContext<LearningContextType|undefined>(undefined);
 export function LearningProvider({children}:{children:React.ReactNode}) {
@@ -24,10 +24,11 @@ export function LearningProvider({children}:{children:React.ReactNode}) {
  const [notificationSettings,setNotifications]=useState<NotificationSettings>({emailDigest:false,assignmentGraded:true,liveClassReminders:true,communityReplies:true});
  const [workspaceSettings,setWorkspace]=useState<WorkspaceSettings>({timezone:'UTC+0 (Greenwich Mean Time)',language:'English (US)',density:'comfortable'});
  const [billing,setBilling]=useState<BillingState>({configured:false,plan:'free',subscription:null,canManage:false});
+ const [mailConfigured,setMailConfigured]=useState(false);
  const pendingNotes=useRef<Record<string,string>>({});const timers=useRef<Record<string,ReturnType<typeof setTimeout>>>({});const queue=useRef(Promise.resolve());
  async function api(path:string,method='GET',body?:unknown){const response=await fetch('/api/'+path,{method,headers:body===undefined?{}:{'Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body),cache:'no-store'});const result=await response.json();if(!response.ok){if(response.status===401)setAccount(null);throw Error(result.error||'Unable to complete the request.')}return result;}
  async function refresh(){const state=await api('workspace');setAccount(state.user);setBilling(state.billing);setData({...initialData,...state,continueCourse:{...initialData.continueCourse,id:state.continueCourse},currentUser:state.currentUser});setSaved(state.savedCourses);setEnrolled(state.enrolledCourses);setNotes({...state.userNotes,...pendingNotes.current});setThreads(state.communityThreads);setGoal(state.settings.weeklyGoalHours??5);setLast(state.lastLessons);if(state.settings.notifications)setNotifications(prev=>({...prev,...state.settings.notifications}));if(state.settings.workspace)setWorkspace(prev=>({...prev,...state.settings.workspace}));}
- async function initialize(){setLoading(true);setError('');try{const session=await api('auth/session');setSetupRequired(session.setupRequired);if(session.user)await refresh();else setAccount(null)}catch(error){setError(error instanceof Error?error.message:'Unable to connect to the server.')}finally{setLoading(false)}}
+ async function initialize(){setLoading(true);setError('');try{const session=await api('auth/session');setSetupRequired(session.setupRequired);setMailConfigured(session.mailConfigured===true);if(session.user)await refresh();else setAccount(null)}catch(error){setError(error instanceof Error?error.message:'Unable to connect to the server.')}finally{setLoading(false)}}
  useEffect(()=>{void initialize();try{const value=localStorage.getItem('apex-learning-theme-v1');if(value==='light'||value==='dark'){setTheme(value);document.body.classList.toggle('light-theme',value==='light')}}catch{}},[]);
  useEffect(()=>{const protect=(event:BeforeUnloadEvent)=>{if(Object.keys(pendingNotes.current).length){event.preventDefault();event.returnValue=''}};window.addEventListener('beforeunload',protect);return()=>window.removeEventListener('beforeunload',protect)},[]);
  function toggleTheme(){setTheme(prev=>{const next=prev==='dark'?'light':'dark';document.body.classList.toggle('light-theme',next==='light');try{localStorage.setItem('apex-learning-theme-v1',next)}catch{}return next})}
@@ -36,8 +37,8 @@ export function LearningProvider({children}:{children:React.ReactNode}) {
  async function logout(){if(Object.keys(pendingNotes.current).length){setError('Wait for your notes to save before signing out.');return;}try{await api('auth/logout','POST',{});setAccount(null);setNotes({})}catch(error){setError(String(error))}}
  async function redirectToBilling(path:string,body?:unknown){try{setError('');const result=await api(path,'POST',body);if(result.url)window.location.assign(result.url)}catch(error){setError(error instanceof Error?error.message:'Unable to open billing.')}}
  if(loading)return <main className="auth-shell"><p role="status">Loading your academy…</p></main>;
- if(!account)return <>{error&&<div role="alert" className="backend-error">{error}<button onClick={()=>void initialize()}>Retry connection</button></div>}<AuthScreen setupRequired={setupRequired} onSignedIn={initialize}/></>;
- return <Context.Provider value={{data,account,billing,theme,toggleTheme,savedCourses,enrolledCourses,userNotes,lastLessons,weeklyGoalHours,communityThreads,notificationSettings,workspaceSettings,api,refresh,logout,noteStatus,
+ if(!account)return <>{error&&<div role="alert" className="backend-error">{error}<button onClick={()=>void initialize()}>Retry connection</button></div>}<AuthScreen setupRequired={setupRequired} mailConfigured={mailConfigured} onSignedIn={initialize}/></>;
+ return <Context.Provider value={{data,account,billing,mailConfigured,theme,toggleTheme,savedCourses,enrolledCourses,userNotes,lastLessons,weeklyGoalHours,communityThreads,notificationSettings,workspaceSettings,api,refresh,logout,noteStatus,
  resendVerification:()=>mutation('auth/resend-verification','POST',{}),
  startCheckout:plan=>redirectToBilling('billing/checkout',{plan}),openBillingPortal:()=>redirectToBilling('billing/portal'),
  toggleSaveCourse:id=>mutation('courses/'+id+'/bookmark',savedCourses.includes(id)?'DELETE':'PUT',savedCourses.includes(id)?undefined:{}),

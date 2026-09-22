@@ -5,10 +5,11 @@ import { useRouter } from 'next/navigation';
 
 interface AuthScreenProps {
   setupRequired: boolean;
+  mailConfigured: boolean;
   onSignedIn: () => Promise<void>;
 }
 
-export function AuthScreen({ setupRequired, onSignedIn }: AuthScreenProps) {
+export function AuthScreen({ setupRequired, mailConfigured, onSignedIn }: AuthScreenProps) {
   const router = useRouter();
   const [mode, setMode] = useState<'login' | 'register' | 'setup'>('login');
   const [email, setEmail] = useState('');
@@ -37,7 +38,7 @@ export function AuthScreen({ setupRequired, onSignedIn }: AuthScreenProps) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Request failed.');
       await onSignedIn();
-      if (mode !== 'login') router.push('/verify-email');
+      if (mode !== 'login' && mailConfigured) router.push('/verify-email');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to complete sign in.');
     } finally {
@@ -65,7 +66,7 @@ export function AuthScreen({ setupRequired, onSignedIn }: AuthScreenProps) {
             </div>
             <h1 className="auth-brand-title">Tekskillup<br />Academy</h1>
             <p className="auth-brand-tagline">
-              Master world-class skills with AI-powered courses, live cohorts, and real-world portfolio projects.
+              Build practical skills with guided courses, projects, and instructor feedback.
             </p>
 
             {/* Feature pills */}
@@ -88,16 +89,6 @@ export function AuthScreen({ setupRequired, onSignedIn }: AuthScreenProps) {
               </div>
             </div>
 
-            {/* Social proof */}
-            <div className="auth-social-proof">
-              <div className="auth-avatars-stack">
-                <img src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=80" alt="" />
-                <img src="https://images.unsplash.com/photo-1580489944761-15a19d654956?auto=format&fit=crop&q=80&w=80" alt="" />
-                <img src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=80" alt="" />
-                <span className="auth-avatars-count">+2,400</span>
-              </div>
-              <p className="auth-proof-text">learners already building the future</p>
-            </div>
           </div>
 
           <p className="auth-brand-footer">© 2026 Tekskillup Academy</p>
@@ -210,9 +201,9 @@ export function AuthScreen({ setupRequired, onSignedIn }: AuthScreenProps) {
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder={mode === 'login' ? '••••••••' : 'Min. 6 characters'}
+                placeholder={mode === 'login' ? '••••••••' : 'Min. 12 characters'}
                 required
-                minLength={mode === 'login' ? 1 : 6}
+                minLength={mode === 'login' ? 1 : 12}
                 maxLength={128}
                 autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
               />

@@ -9,7 +9,7 @@ import { Header } from './Header';
 import { CommandPalette } from '../modals/CommandPalette';
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
-  const {account,resendVerification}=useLearning();
+  const {account,resendVerification,mailConfigured}=useLearning();
   const pathname=usePathname();
   const [navOpen, setNavOpen] = useState(false);
   const [cmdOpen, setCmdOpen] = useState(false);
@@ -33,7 +33,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       <Sidebar onClose={() => setNavOpen(false)} />
 
       <main id="app-main">
-        {!account.emailVerified && pathname !== '/verify-email' && (
+        {mailConfigured && !account.emailVerified && pathname !== '/verify-email' && (
           <div className="verify-banner" role="status">
             <span>{verifyNotice || 'Verify your email address to secure your account.'}</span>
             <Link href="/verify-email">Enter code</Link>

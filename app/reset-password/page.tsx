@@ -81,10 +81,10 @@ function SetNewPassword({ token }: { token: string }) {
   return (
     <>
       <h1>Choose a new password</h1>
-      <p>At least 6 characters.</p>
+      <p>At least 12 characters.</p>
       <form onSubmit={submit} className="backend-form">
-        <label>New password<input name="password" type="password" required minLength={6} maxLength={128} autoComplete="new-password" value={password} onChange={e => setPassword(e.target.value)} /></label>
-        <label>Confirm new password<input name="confirm" type="password" required minLength={6} maxLength={128} autoComplete="new-password" value={confirm} onChange={e => setConfirm(e.target.value)} /></label>
+        <label>New password<input name="password" type="password" required minLength={12} maxLength={128} autoComplete="new-password" value={password} onChange={e => setPassword(e.target.value)} /></label>
+        <label>Confirm new password<input name="confirm" type="password" required minLength={12} maxLength={128} autoComplete="new-password" value={confirm} onChange={e => setConfirm(e.target.value)} /></label>
         {error && <p role="alert" className="backend-error">{error}</p>}
         <button className="btn btn-primary" disabled={busy}>{busy ? 'Please wait…' : 'Reset password'}</button>
       </form>

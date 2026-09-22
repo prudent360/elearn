@@ -17,7 +17,7 @@ export default function MyLearningPage() {
     if (filter === 'saved') return savedCourses.includes(c.id);
     if (filter === 'in-progress') return c.status === 'in-progress' && c.progress < 100;
     if (filter === 'completed') return c.progress === 100;
-    return true;
+    return c.status === 'in-progress' || c.status === 'completed';
   });
 
   if (query.trim()) {

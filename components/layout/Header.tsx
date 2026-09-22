@@ -29,7 +29,7 @@ const pageTitles: Record<string, string> = {
 
 export function Header({ onOpenNav, onOpenCmd }: HeaderProps) {
   const pathname = usePathname() || '/';
-  const { theme, toggleTheme, data, account, billing } = useLearning();
+  const { theme, toggleTheme, data, account, billing, enrolledCourses } = useLearning();
 
   let title = pageTitles[pathname];
   if (!title && pathname.startsWith('/course')) {
@@ -86,8 +86,8 @@ export function Header({ onOpenNav, onOpenCmd }: HeaderProps) {
 
         <Link href="/pricing" className="header-plan-chip">{billing.plan === 'pro' ? 'Pro' : 'Free'}</Link>
 
-        <Link href="/course?id=course-101" className="btn btn-primary header-continue">
-          Continue Learning <ArrowRight style={{ width: 16, height: 16 }} />
+        <Link href={account.role!=='learner'?'/instructor':enrolledCourses.length&&data.continueCourse?.id?`/course?id=${data.continueCourse.id}`:'/browse-courses'} className="btn btn-primary header-continue">
+          {account.role!=='learner'?'Instructor Studio':enrolledCourses.length?'Continue Learning':'Explore Courses'} <ArrowRight style={{ width: 16, height: 16 }} />
         </Link>
       </div>
     </header>

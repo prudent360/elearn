@@ -11,7 +11,7 @@ function handle(request: Request) {
   const mail = process.env.LMS_EMAIL_API_KEY
     ? createResendMailer({ apiKey: process.env.LMS_EMAIL_API_KEY, from: process.env.LMS_EMAIL_FROM || 'Tekskillup Academy <no-reply@tekskillup.academy>' })
     : createConsoleMailer();
-  service ??= createService(openDatabase(), initialData.courses, { setupToken: process.env.LMS_SETUP_TOKEN, origin: process.env.LMS_ORIGIN || url.origin, files: localFiles(), mail, stripe: { secretKey: process.env.STRIPE_SECRET_KEY, webhookSecret: process.env.STRIPE_WEBHOOK_SECRET, prices: { 'pro-monthly': process.env.STRIPE_PRICE_PRO_MONTHLY, 'pro-yearly': process.env.STRIPE_PRICE_PRO_YEARLY }, portalConfigurationId: process.env.STRIPE_PORTAL_CONFIGURATION_ID } });
+  service ??= createService(openDatabase(), initialData.courses, { setupToken: process.env.LMS_SETUP_TOKEN, origin: process.env.LMS_ORIGIN || url.origin, files: localFiles(), mail, notificationsToken: process.env.LMS_NOTIFICATIONS_TOKEN, stripe: { enabled: process.env.STRIPE_BILLING_ENABLED === 'true', secretKey: process.env.STRIPE_SECRET_KEY, webhookSecret: process.env.STRIPE_WEBHOOK_SECRET, prices: { 'pro-monthly': process.env.STRIPE_PRICE_PRO_MONTHLY, 'pro-yearly': process.env.STRIPE_PRICE_PRO_YEARLY }, portalConfigurationId: process.env.STRIPE_PORTAL_CONFIGURATION_ID } });
   return service.handle(request);
 }
 export const GET=handle;

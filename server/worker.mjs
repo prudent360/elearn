@@ -11,7 +11,7 @@ export default {async fetch(request,env){
     if(!env.DB)return Response.json({error:'The database binding is not configured.'},{status:503});
     try {ready??=env.DB.batch(schema.map(sql=>env.DB.prepare(sql))).catch(error=>{ready=undefined;throw error});await ready;
       const mail=env.LMS_EMAIL_API_KEY?createResendMailer({apiKey:env.LMS_EMAIL_API_KEY,from:env.LMS_EMAIL_FROM||'Tekskillup Academy <no-reply@tekskillup.academy>'}):createConsoleMailer();
-      service??=createService(d1Database(env.DB),initialData.courses,{origin:env.LMS_ORIGIN,setupToken:env.LMS_SETUP_TOKEN,files:env.FILES,mail,stripe:{secretKey:env.STRIPE_SECRET_KEY,webhookSecret:env.STRIPE_WEBHOOK_SECRET,prices:{'pro-monthly':env.STRIPE_PRICE_PRO_MONTHLY,'pro-yearly':env.STRIPE_PRICE_PRO_YEARLY},portalConfigurationId:env.STRIPE_PORTAL_CONFIGURATION_ID}});return await service.handle(request);
+      service??=createService(d1Database(env.DB),initialData.courses,{origin:env.LMS_ORIGIN,setupToken:env.LMS_SETUP_TOKEN,files:env.FILES,mail,notificationsToken:env.LMS_NOTIFICATIONS_TOKEN,stripe:{enabled:env.STRIPE_BILLING_ENABLED==='true',secretKey:env.STRIPE_SECRET_KEY,webhookSecret:env.STRIPE_WEBHOOK_SECRET,prices:{'pro-monthly':env.STRIPE_PRICE_PRO_MONTHLY,'pro-yearly':env.STRIPE_PRICE_PRO_YEARLY},portalConfigurationId:env.STRIPE_PORTAL_CONFIGURATION_ID}});return await service.handle(request);
     }catch(error){console.error('Backend initialization failed',error.message);return Response.json({error:'The database is temporarily unavailable.'},{status:503,headers:{'Cache-Control':'no-store'}})}
   }
   if(url.pathname.startsWith('/course/')){const id=url.pathname.split('/')[2];if(id)return Response.redirect(url.origin+'/course/?id='+encodeURIComponent(id),302)}

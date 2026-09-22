@@ -16,6 +16,16 @@ async function stripeRequest(config, path, values) {
   return result;
 }
 
+export async function retrievePrice(config, priceId) {
+  if (!config?.secretKey || !priceId) throw Error('Stripe pricing is not configured.');
+  const response = await (config.fetch || fetch)(`https://api.stripe.com/v1/prices/${encodeURIComponent(priceId)}`, {
+    headers: { Authorization: `Bearer ${config.secretKey}` }
+  });
+  const result = await response.json();
+  if (!response.ok) throw Error(result?.error?.message || 'Stripe pricing is unavailable.');
+  return result;
+}
+
 export function createCheckout(config, { user, customerId, plan, origin }) {
   const price = config?.prices?.[plan];
   if (!price) throw Error('That billing plan is not configured.');
@@ -73,4 +83,4 @@ export async function verifyStripeEvent(rawBody, signature, secret, toleranceSec
   return JSON.parse(rawBody);
 }
 
-export const billingConfigured = config => Boolean(config?.secretKey && config?.webhookSecret && config?.prices?.['pro-monthly'] && config?.prices?.['pro-yearly']);
+export const billingConfigured = config => Boolean(config?.enabled && config?.secretKey && config?.webhookSecret && config?.prices?.['pro-monthly'] && config?.prices?.['pro-yearly']);

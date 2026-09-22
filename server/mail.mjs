@@ -3,6 +3,7 @@
 // HTTP-based provider without touching server/service.mjs.
 export function createResendMailer({apiKey,from}) {
   return {
+    configured:true,
     async send({to,subject,text,html}) {
       let response;
       try {
@@ -21,6 +22,7 @@ export function createResendMailer({apiKey,from}) {
 // the verification/reset link or code — instead of silently discarding it.
 export function createConsoleMailer() {
   return {
+    configured:false,
     async send({to,subject,text}) {
       console.warn(`[email not configured] Would send "${subject}" to ${to}:\n${text}`);
       return {sent:false};
