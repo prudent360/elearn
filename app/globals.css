@@ -1,4 +1,23 @@
-@import "../styles.css";
+@layer theme, legacy, components, utilities;
+@import "tailwindcss/theme" layer(theme);
+@import "../styles.css" layer(legacy);
+@import "tailwindcss/utilities" layer(utilities) source(none);
+@source "./";
+@source "../components";
+@source "../context";
+
+@theme inline {
+  --color-app: var(--bg-app);
+  --color-surface: var(--bg-card);
+  --color-input: var(--bg-input);
+  --color-ink: var(--text-primary);
+  --color-copy: var(--text-secondary);
+  --color-muted: var(--text-muted);
+  --color-brand: var(--accent-primary);
+  --color-brand-hover: var(--accent-primary-hover);
+  --color-line: var(--border-subtle);
+  --radius-card: var(--radius-lg);
+}
 
 /* Additional Next.js Reset & Utility Overrides */
 html, body {

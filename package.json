@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "next build --webpack",
     "start": "next start",
     "check": "node --check data.js",
     "test": "node --test tests/*.test.cjs",
@@ -24,6 +24,9 @@
     "typescript": "^7.0.2"
   },
   "devDependencies": {
+    "@tailwindcss/postcss": "^4.3.3",
+    "postcss": "^8.5.28",
+    "tailwindcss": "^4.3.3",
     "wrangler": "^4.136.2"
   }
 }
